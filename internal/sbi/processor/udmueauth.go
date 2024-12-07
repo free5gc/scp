@@ -4,9 +4,14 @@ import (
 	"encoding/hex"
 	"net/http"
 
+	"github.com/antihax/optional"
 	"github.com/free5gc/UeauCommon"
+	"github.com/free5gc/openapi"
+	"github.com/free5gc/openapi/Nudr_DataRepository"
 	"github.com/free5gc/openapi/models"
+	scp_context "github.com/free5gc/scp/internal/context"
 	"github.com/free5gc/scp/internal/logger"
+	"github.com/gin-gonic/gin"
 )
 
 func (p *Processor) PostGenerateAuthData(
@@ -18,7 +23,10 @@ func (p *Processor) PostGenerateAuthData(
 	// NOTE: The request from AMF is guaranteed to be correct
 
 	// TODO: Send request to target NF by setting correct uri
-	targetNfUri := "http://udm.free5gc.org:8000"
+	// targetNfUri := "http://udm.free5gc.org:8000"
+	scpContext := scp_context.GetSelf()
+	udmUri := scpContext.UdmUri
+	targetNfUri := udmUri
 
 	// TODO: Check IEs in request body is correct
 	// 3GPP 29.503 6.3.6.2.2
@@ -54,7 +62,6 @@ func (p *Processor) PostGenerateAuthData(
 		logger.DetectorLog.Errorln("AuthenticationInfoResult.AuthType:", ERR_VALUE_INCORRECT)
 	}
 	response.AuthType = models.AuthType(CurrentAuthProcedure.AuthSubsData.AuthenticationMethod)
-
 	// TS 29.503 Figure 6.3.3.1-1  Nudm_UEAU API
 	CurrentAuthProcedure.Supi, _ = extractSupi(supiOrSuci) // store correct data in SCP detector
 
@@ -188,5 +195,108 @@ func (p *Processor) PostGenerateAuthData(
 		Status: http.StatusForbidden,
 		Cause:  "UNSPECIFIED",
 	}
+	logger.DetectorLog.Errorln("end")
 	return &HandlerResponse{http.StatusForbidden, nil, problemDetails}
 }
+
+func (p *Processor) ConfirmAuthDataProcedure(
+	gc *gin.Context,
+	authEvent models.AuthEvent,
+	supi string,
+) {
+	ctx, pd, err := p.Context().GetTokenCtx(models.ServiceName_NUDR_DR, models.NfType_UDR)
+	if err != nil {
+		gc.JSON(int(pd.Status), pd)
+		return
+	}
+	var createAuthParam Nudr_DataRepository.CreateAuthenticationStatusParamOpts
+	optInterface := optional.NewInterface(authEvent)
+	createAuthParam.AuthEvent = optInterface
+
+	client, err := p.Consumer().CreateSCPClientToUDR(supi)
+	if err != nil {
+		problemDetails := openapi.ProblemDetailsSystemFailure(err.Error())
+		gc.JSON(int(problemDetails.Status), problemDetails)
+		return
+	}
+
+	resp, err := client.AuthenticationStatusDocumentApi.CreateAuthenticationStatus(
+		ctx, supi, &createAuthParam)
+	if err != nil {
+		problemDetails := &models.ProblemDetails{
+			Status: int32(resp.StatusCode),
+			Cause:  err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails).Cause,
+			Detail: err.Error(),
+		}
+
+		logger.DetectorLog.Errorln("ConfirmAuth err:", err.Error())
+		gc.JSON(int(problemDetails.Status), problemDetails)
+		return
+	}
+	defer func() {
+		if rspCloseErr := resp.Body.Close(); rspCloseErr != nil {
+			logger.DetectorLog.Errorf("CreateAuthenticationStatus response body cannot close: %+v", rspCloseErr)
+		}
+	}()
+
+	gc.Status(http.StatusCreated)
+}
+
+// func (p *Processor) GetNssaiProcedure(c *gin.Context, supi string, plmnID string, supportedFeatures string) {
+// ctx, pd, err := p.Context().GetTokenCtx(models.ServiceName_NUDR_DR, models.NfType_UDR)
+// if err != nil {
+// 	c.JSON(int(pd.Status), pd)
+// 	return
+// }
+// var queryAmDataParamOpts Nudr_DataRepository.QueryAmDataParamOpts
+// queryAmDataParamOpts.SupportedFeatures = optional.NewString(supportedFeatures)
+// var nssaiResp models.Nssai
+// clientAPI, err := p.Consumer().CreateSCPClientToUDR(supi)
+// if err != nil {
+// 	problemDetails := openapi.ProblemDetailsSystemFailure(err.Error())
+// 	c.JSON(int(problemDetails.Status), problemDetails)
+// 	return
+// }
+
+// accessAndMobilitySubscriptionDataResp, res, err := clientAPI.AccessAndMobilitySubscriptionDataDocumentApi.
+// 	QueryAmData(ctx, supi, plmnID, &queryAmDataParamOpts)
+// if err != nil {
+// 	if res == nil {
+// 		logger.DetectorLog.Warnln(err)
+// 	} else if err.Error() != res.Status {
+// 		logger.DetectorLog.Warnln(err)
+// 	} else {
+// 		logger.DetectorLog.Warnln(err)
+// 		problemDetails := &models.ProblemDetails{
+// 			Status: int32(res.StatusCode),
+// 			Cause:  err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails).Cause,
+// 			Detail: err.Error(),
+// 		}
+
+// 		c.JSON(int(problemDetails.Status), problemDetails)
+// 		return
+// 	}
+// }
+// defer func() {
+// 	if rspCloseErr := res.Body.Close(); rspCloseErr != nil {
+// 		logger.DetectorLog.Errorf("QueryAmData response body cannot close: %+v", rspCloseErr)
+// 	}
+// }()
+
+// nssaiResp = *accessAndMobilitySubscriptionDataResp.Nssai
+
+// if res.StatusCode == http.StatusOK {
+// 	udmUe, ok := p.Context().UdmUeFindBySupi(supi) //UDM context
+// 	if !ok {
+// 		udmUe = p.Context().NewUdmUe(supi)
+// 	}
+// 	udmUe.Nssai = &nssaiResp
+// 	c.JSON(http.StatusOK, udmUe.Nssai)
+// } else {
+// 	problemDetails := &models.ProblemDetails{
+// 		Status: http.StatusNotFound,
+// 		Cause:  "DATA_NOT_FOUND",
+// 	}
+// 	c.JSON(int(problemDetails.Status), problemDetails)
+// }
+// }

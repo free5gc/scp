@@ -4,11 +4,16 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"net/http"
 
 	"github.com/free5gc/UeauCommon"
 	"github.com/free5gc/milenage"
 	"github.com/free5gc/openapi/models"
+	"github.com/free5gc/scp/internal/logger"
+	"github.com/free5gc/util/mongoapi"
 	suciLib "github.com/free5gc/util_3gpp/suci"
+	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 const (
@@ -161,4 +166,15 @@ func eapAkaPrimePrf(IK []byte, CK []byte, identity string) ([]byte, []byte, []by
 	MSK := MK[80:144]   // 640..1151
 	EMSK := MK[144:208] // 1152..1663
 	return K_encr, K_aut, K_re, MSK, EMSK
+}
+
+func (p *Processor) CreateAuthenticationStatusProcedure(c *gin.Context, collName string, ueId string, putData bson.M) {
+	filter := bson.M{"ueId": ueId}
+	putData["ueId"] = ueId
+
+	if _, err := mongoapi.RestfulAPIPutOne(collName, filter, putData); err != nil {
+		logger.DetectorLog.Errorf("CreateAuthenticationStatusProcedure err: %+v", err)
+	}
+
+	c.Status(http.StatusNoContent)
 }

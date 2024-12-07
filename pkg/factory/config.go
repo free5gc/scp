@@ -15,9 +15,10 @@ import (
 )
 
 const (
-	ServiceNausfAuth string = string(models.ServiceName_NAUSF_AUTH)
-	ServiceNudmUeau  string = string(models.ServiceName_NUDM_UEAU)
-	ServiceNudrDR    string = string(models.ServiceName_NUDR_DR)
+	ServiceNausfAuth     string = string(models.ServiceName_NAUSF_AUTH)
+	ServiceNudmUeau      string = string(models.ServiceName_NUDM_UEAU)
+	ServiceNudrDR        string = string(models.ServiceName_NUDR_DR)
+	ServiceNudmSubManage string = string(models.ServiceName_NUDM_SDM)
 )
 const (
 	ScpDefaultTLSKeyLogPath  = "./log/scpsslkey.log"
@@ -31,6 +32,7 @@ const (
 	ScpDefaultNrfUri         = "https://127.0.0.10:8000"
 	NausfAuthUriPrefix       = "/" + ServiceNausfAuth + "/v1"
 	NudmUeauUriPrefix        = "/" + ServiceNudmUeau + "/v1"
+	NudmSubManageUriPrefix   = "/" + ServiceNudmSubManage + "/v1"
 	NudrDRUriPrefix          = "/" + ServiceNudrDR + "/v1"
 )
 
@@ -69,6 +71,16 @@ type Configuration struct {
 	NrfUri      string    `yaml:"nrfUri,omitempty" valid:"required"`
 	NrfCertPem  string    `yaml:"nrfCertPem,omitempty" valid:"optional"`
 	ServiceList []Service `yaml:"serviceList,omitempty" valid:"required"`
+	AmfUri      string    `yaml:"amfUri,omitempty" valid:"required"`
+	AusfUri     string    `yaml:"ausfUri,omitempty" valid:"required"`
+	ChfUri      string    `yaml:"chfUri,omitempty" valid:"required"`
+	NefUri      string    `yaml:"nefUri,omitempty" valid:"required"`
+	NssfUri     string    `yaml:"nssfUri,omitempty" valid:"required"`
+	PcfUri      string    `yaml:"pcfUri,omitempty" valid:"required"`
+	SmfUri      string    `yaml:"smfUri,omitempty" valid:"required"`
+	UdmUri      string    `yaml:"udmUri,omitempty" valid:"required"`
+	UdrUri      string    `yaml:"udrUri,omitempty" valid:"required"`
+	UpfUri      string    `yaml:"upfUri,omitempty" valid:"required"`
 }
 
 type Logger struct {

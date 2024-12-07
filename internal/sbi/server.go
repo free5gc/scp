@@ -2,8 +2,11 @@ package sbi
 
 import (
 	"fmt"
+	"io"
 	"net/http"
+	"regexp"
 	"runtime/debug"
+	"strings"
 	"sync"
 
 	"github.com/free5gc/openapi"
@@ -29,6 +32,9 @@ type Endpoint struct {
 
 func applyEndpoints(group *gin.RouterGroup, endpoints []Endpoint) {
 	for _, endpoint := range endpoints {
+		// if endpoint.Method == "" || endpoint.Pattern == "" {
+		// 	group.Any("/*path", endpoint.APIFunc)
+		// } else {
 		switch endpoint.Method {
 		case "GET":
 			group.GET(endpoint.Pattern, endpoint.APIFunc)
@@ -40,6 +46,7 @@ func applyEndpoints(group *gin.RouterGroup, endpoints []Endpoint) {
 			group.PATCH(endpoint.Pattern, endpoint.APIFunc)
 		case "DELETE":
 			group.DELETE(endpoint.Pattern, endpoint.APIFunc)
+			// }
 		}
 	}
 }
@@ -75,6 +82,13 @@ func NewServer(scp scp, tlsKeyLogPath string) (*Server, error) {
 	endpoints = s.getUdrAuthSubsDataEndpoints()
 	group = s.router.Group(factory.NudrDRUriPrefix)
 	applyEndpoints(group, endpoints)
+
+	endpoints = s.getUdmSubManageEndpoints()
+	group = s.router.Group(factory.NudmSubManageUriPrefix)
+	applyEndpoints(group, endpoints)
+
+	// For not found API
+	s.router.NoRoute(s.NonSupportAPI)
 
 	s.router.Use(cors.New(cors.Config{
 		AllowMethods: []string{"GET", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"},
@@ -222,4 +236,72 @@ func buildHttpResponseHeader(gc *gin.Context, rsp *httpwrapper.Response) {
 		}
 		gc.Header(k, allValues)
 	}
+}
+
+func (s *Server) NonSupportAPI(gc *gin.Context) {
+	uriPath := gc.Request.URL.Path
+	logger.DetectorLog.Infoln("Handle not support API: ", uriPath)
+
+	targetUri := ""
+	targetNF, err := extractNFName(uriPath)
+	if err != nil {
+		logger.DetectorLog.Errorf("Non support API format: %s\n", uriPath)
+		return
+	}
+	if scp_context.NFtoUriMap[strings.ToUpper(targetNF)] != "" {
+		targetUri = scp_context.NFtoUriMap[strings.ToUpper(targetNF)]
+	}
+	if targetUri == "" {
+		logger.DetectorLog.Errorf("Non support API format: %s\n", uriPath)
+		return
+	}
+
+	logger.DetectorLog.Infof("Forward the packet to %s: %s", targetNF, targetUri)
+
+	targetURL := fmt.Sprintf("%s%s", targetUri, gc.Request.URL.RequestURI())
+	logger.DetectorLog.Infof("Forwarding unmatched request to: %s", targetURL)
+
+	// Forwarding request
+	forwardReq, err := http.NewRequest(gc.Request.Method, targetURL, gc.Request.Body)
+	if err != nil {
+		gc.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create forward request"})
+		return
+	}
+
+	// Copy header
+	for key, values := range gc.Request.Header {
+		for _, value := range values {
+			forwardReq.Header.Add(key, value)
+		}
+	}
+
+	// Send forwarding request
+	client := &http.Client{}
+	forwardResp, err := client.Do(forwardReq)
+	if err != nil {
+		gc.JSON(http.StatusBadGateway, gin.H{"error": "Failed to forward request"})
+		return
+	}
+	defer forwardResp.Body.Close()
+
+	// Response status code, header, and body to client
+	gc.Status(forwardResp.StatusCode)
+	for key, values := range forwardResp.Header {
+		for _, value := range values {
+			gc.Writer.Header().Add(key, value)
+		}
+	}
+	_, err = io.Copy(gc.Writer, forwardResp.Body)
+	if err != nil {
+		gc.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to write response"})
+	}
+}
+
+func extractNFName(uri string) (string, error) {
+	re := regexp.MustCompile(`^/n([a-z]+)`)
+	matches := re.FindStringSubmatch(uri)
+	if len(matches) > 1 {
+		return matches[1], nil
+	}
+	return "", fmt.Errorf("no NF name found in URI: %s", uri)
 }
