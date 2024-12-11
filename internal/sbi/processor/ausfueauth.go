@@ -1,10 +1,8 @@
 package processor
 
 import (
-	"encoding/hex"
 	"net/http"
 
-	"github.com/free5gc/UeauCommon"
 	"github.com/free5gc/openapi/models"
 	scp_context "github.com/free5gc/scp/internal/context"
 	"github.com/free5gc/scp/internal/logger"
@@ -241,38 +239,38 @@ func (p *Processor) PutUeAutenticationsConfirmation(
 
 	// TODO: Check IEs in response body is correct
 	// 3GPP 29.509 6.1.6.2.8
-	if response.AuthResult != models.AuthResult_SUCCESS &&
-		response.AuthResult != models.AuthResult_FAILURE &&
-		response.AuthResult != models.AuthResult_ONGOING {
-		logger.DetectorLog.Errorln("ConfirmationDataResponse.authResult: " + ERR_VALUE_INCORRECT)
-	} else if response.AuthResult == models.AuthResult_SUCCESS {
-		if response.Supi == "" {
-			logger.DetectorLog.Errorln("ConfirmationDataResponse.authResult.Supi: " + ERR_MISS_CONDITION)
-			response.Supi = supi
-		} else if response.Supi != supi {
-			logger.DetectorLog.Errorln("ConfirmationDataResponse.authResult.Supi: " + ERR_VALUE_INCORRECT)
-			response.Supi = supi
-		}
+	// if response.AuthResult != models.AuthResult_SUCCESS &&
+	// 	response.AuthResult != models.AuthResult_FAILURE &&
+	// 	response.AuthResult != models.AuthResult_ONGOING {
+	// 	logger.DetectorLog.Errorln("ConfirmationDataResponse.authResult: " + ERR_VALUE_INCORRECT)
+	// } else if response.AuthResult == models.AuthResult_SUCCESS {
+	// 	if response.Supi == "" {
+	// 		logger.DetectorLog.Errorln("ConfirmationDataResponse.authResult.Supi: " + ERR_MISS_CONDITION)
+	// 		response.Supi = supi
+	// 	} else if response.Supi != supi {
+	// 		logger.DetectorLog.Errorln("ConfirmationDataResponse.authResult.Supi: " + ERR_VALUE_INCORRECT)
+	// 		response.Supi = supi
+	// 	}
 
-		// 3GPP 22.501 Annex A.2
-		key := append(ck, ik...)
-		FC := UeauCommon.FC_FOR_KAUSF_DERIVATION
-		P0 := []byte(servingNetworkName)
-		P1 := sqnXorAk
-		kausf := retrieve5GAkaKausf(key, FC, P0, P1)
+	// 	// 3GPP 22.501 Annex A.2
+	// 	key := append(ck, ik...)
+	// 	FC := UeauCommon.FC_FOR_KAUSF_DERIVATION
+	// 	P0 := []byte(servingNetworkName)
+	// 	P1 := sqnXorAk
+	// 	kausf := retrieve5GAkaKausf(key, FC, P0, P1)
 
-		// 3GPP 33.501 Annex A.6
-		FC = UeauCommon.FC_FOR_KSEAF_DERIVATION
-		P0 = []byte(servingNetworkName)
-		kseaf := hex.EncodeToString(retrieveKseaf(kausf, FC, P0))
-		if response.Kseaf == "" {
-			logger.DetectorLog.Errorln("ConfirmationDataResponse.authResult.Kseaf: " + ERR_MISS_CONDITION)
-			response.Kseaf = kseaf
-		} else if response.Kseaf != kseaf {
-			logger.DetectorLog.Errorln("ConfirmationDataResponse.authResult.Kseaf: " + ERR_VALUE_INCORRECT)
-			response.Kseaf = kseaf
-		}
-	}
+	// 	// 3GPP 33.501 Annex A.6
+	// 	FC = UeauCommon.FC_FOR_KSEAF_DERIVATION
+	// 	P0 = []byte(servingNetworkName)
+	// 	kseaf := hex.EncodeToString(retrieveKseaf(kausf, FC, P0))
+	// 	if response.Kseaf == "" {
+	// 		logger.DetectorLog.Errorln("ConfirmationDataResponse.authResult.Kseaf: " + ERR_MISS_CONDITION)
+	// 		response.Kseaf = kseaf
+	// 	} else if response.Kseaf != kseaf {
+	// 		logger.DetectorLog.Errorln("ConfirmationDataResponse.authResult.Kseaf: " + ERR_VALUE_INCORRECT)
+	// 		response.Kseaf = kseaf
+	// 	}
+	// }
 
 	if response != nil {
 		return &HandlerResponse{http.StatusOK, nil, response}

@@ -28,16 +28,6 @@ func (s *Server) getUdrAuthSubsDataEndpoints() []Endpoint {
 			Pattern: "/subscription-data/:ueId/:servingPlmnId/provisioned-data/am-data",
 			APIFunc: s.HandleCreateAuthenticationStatus,
 		},
-		// {
-		// 	Method:  http.MethodGet,
-		// 	Pattern: "/subscription-data/:ueId/:servingPlmnId/provisioned-data/am-data",
-		// 	APIFunc: s.HandleQueryAmData,
-		// },
-		// {
-		// 	Method:  "",
-		// 	Pattern: "",
-		// 	APIFunc: s.NonSupportAPI,
-		// },
 	}
 }
 

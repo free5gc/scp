@@ -32,9 +32,6 @@ type Endpoint struct {
 
 func applyEndpoints(group *gin.RouterGroup, endpoints []Endpoint) {
 	for _, endpoint := range endpoints {
-		// if endpoint.Method == "" || endpoint.Pattern == "" {
-		// 	group.Any("/*path", endpoint.APIFunc)
-		// } else {
 		switch endpoint.Method {
 		case "GET":
 			group.GET(endpoint.Pattern, endpoint.APIFunc)
@@ -46,7 +43,6 @@ func applyEndpoints(group *gin.RouterGroup, endpoints []Endpoint) {
 			group.PATCH(endpoint.Pattern, endpoint.APIFunc)
 		case "DELETE":
 			group.DELETE(endpoint.Pattern, endpoint.APIFunc)
-			// }
 		}
 	}
 }
@@ -259,7 +255,6 @@ func (s *Server) NonSupportAPI(gc *gin.Context) {
 	logger.DetectorLog.Infof("Forward the packet to %s: %s", targetNF, targetUri)
 
 	targetURL := fmt.Sprintf("%s%s", targetUri, gc.Request.URL.RequestURI())
-	logger.DetectorLog.Infof("Forwarding unmatched request to: %s", targetURL)
 
 	// Forwarding request
 	forwardReq, err := http.NewRequest(gc.Request.Method, targetURL, gc.Request.Body)

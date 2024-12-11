@@ -46,7 +46,6 @@ func (s *Server) HandleConfirmAuth(gc *gin.Context) {
 	var authEvent models.AuthEvent
 	requestBody, err := gc.GetRawData()
 
-	// logger.DetectorLog.Errorln("supisupisupi: ", supi)
 	if err != nil {
 		problemDetail := models.ProblemDetails{
 			Title:  "System failure",
