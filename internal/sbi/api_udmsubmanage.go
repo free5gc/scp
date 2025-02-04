@@ -22,11 +22,9 @@ func (s *Server) getUdmSubManageEndpoints() []Endpoint {
 			APIFunc: s.HandleGetNssai,
 		},
 	}
-
 }
 
 func (s *Server) HandleGetNssai(gc *gin.Context) {
-
 	UdmUri := scp_context.GetSelf().UdmUri
 	logger.DetectorLog.Println("Handle Get Nssai Received, but not support detection, forward to UDM: ", UdmUri)
 	supi := gc.Param("supiOrSuci")
@@ -60,9 +58,15 @@ func (s *Server) HandleGetNssai(gc *gin.Context) {
 		return
 	}
 
-	forwardURL := fmt.Sprintf("%s%s/%s/nssai?plmnId=%s", UdmUri, factory.NudmSubManageUriPrefix, supi, url.QueryEscape(string(plmnIdJson)))
+	forwardURL := fmt.Sprintf(
+		"%s%s/%s/nssai?plmnId=%s",
+		UdmUri,
+		factory.NudmSubManageUriPrefix,
+		supi,
+		url.QueryEscape(string(plmnIdJson)),
+	)
 
-	req, err := http.NewRequest(http.MethodGet, forwardURL, nil)
+	req, err := http.NewRequestWithContext(gc.Request.Context(), http.MethodGet, forwardURL, nil)
 	if err != nil {
 		gc.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create forward request"})
 		return
@@ -80,7 +84,12 @@ func (s *Server) HandleGetNssai(gc *gin.Context) {
 		gc.JSON(http.StatusBadGateway, gin.H{"error": "Failed to forward request to UDM"})
 		return
 	}
-	defer resp.Body.Close()
+
+	defer func() {
+		if err = resp.Body.Close(); err != nil {
+			logger.DetectorLog.Warnln("Failed to close response body:", err)
+		}
+	}()
 
 	gc.Status(resp.StatusCode)
 	for key, values := range resp.Header {

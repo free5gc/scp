@@ -7,6 +7,7 @@ import (
 	"github.com/free5gc/openapi/Nudr_DataRepository"
 	"github.com/free5gc/openapi/models"
 	scp_context "github.com/free5gc/scp/internal/context"
+	"github.com/free5gc/scp/internal/logger"
 )
 
 type nudrService struct {
@@ -35,8 +36,8 @@ func (s *nudrService) getClient(uri string) *Nudr_DataRepository.APIClient {
 }
 
 func (s *nudrService) SendAuthSubsDataGet(uri string,
-	supi string) (*models.AuthenticationSubscription, *models.ProblemDetails, error) {
-
+	supi string,
+) (*models.AuthenticationSubscription, *models.ProblemDetails, error) {
 	client := s.getClient(uri)
 
 	ctx, _, err := s.consumer.Context().GetTokenCtx(models.ServiceName_NUDR_DR, models.NfType_UDR)
@@ -48,6 +49,11 @@ func (s *nudrService) SendAuthSubsDataGet(uri string,
 	if err == nil {
 		return &authSubs, nil, nil
 	} else if httpResponse != nil {
+		defer func() {
+			if closeErr := httpResponse.Body.Close(); closeErr != nil {
+				logger.DetectorLog.Warnln("Failed to close response body:", err)
+			}
+		}()
 		if httpResponse.Status != err.Error() {
 			return nil, nil, err
 		}
@@ -59,8 +65,8 @@ func (s *nudrService) SendAuthSubsDataGet(uri string,
 }
 
 func (s *nudrService) ModifyAuthenticationPatch(uri string,
-	supi string, patchItemArray []models.PatchItem) (*models.ProblemDetails, error) {
-
+	supi string, patchItemArray []models.PatchItem,
+) (*models.ProblemDetails, error) {
 	client := s.getClient(uri)
 
 	ctx, _, err := s.consumer.Context().GetTokenCtx(models.ServiceName_NUDR_DR, models.NfType_UDR)
@@ -73,6 +79,11 @@ func (s *nudrService) ModifyAuthenticationPatch(uri string,
 	if err == nil {
 		return nil, nil
 	} else if httpResponse != nil {
+		defer func() {
+			if closeErr := httpResponse.Body.Close(); closeErr != nil {
+				logger.DetectorLog.Warnln("Failed to close response body:", err)
+			}
+		}()
 		if httpResponse.Status != err.Error() {
 			return nil, err
 		}

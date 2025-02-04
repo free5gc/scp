@@ -12,7 +12,6 @@ import (
 
 func (s *Server) getUdrAuthSubsDataEndpoints() []Endpoint {
 	return []Endpoint{
-
 		{
 			Method:  http.MethodGet,
 			Pattern: "/subscription-data/:ueId/authentication-data/authentication-subscription",
@@ -32,11 +31,11 @@ func (s *Server) getUdrAuthSubsDataEndpoints() []Endpoint {
 }
 
 func (s *Server) apiGetAuthSubsData(gc *gin.Context) {
-
 	hdlRsp := s.Processor().GetAuthSubsData(gc.Param("ueId"))
 
 	s.buildAndSendHttpResponse(gc, hdlRsp, false)
 }
+
 func (s *Server) apiPatchAuthSubsData(gc *gin.Context) {
 	var patchItemArray []models.PatchItem
 	if err := gc.ShouldBindJSON(&patchItemArray); err != nil {
@@ -47,6 +46,7 @@ func (s *Server) apiPatchAuthSubsData(gc *gin.Context) {
 
 	s.buildAndSendHttpResponse(gc, hdlRsp, false)
 }
+
 func (s *Server) HandleCreateAuthenticationStatus(gc *gin.Context) {
 	var authEvent models.AuthEvent
 

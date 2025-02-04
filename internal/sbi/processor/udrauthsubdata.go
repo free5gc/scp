@@ -13,17 +13,11 @@ func (p *Processor) GetAuthSubsData(
 ) *HandlerResponse {
 	logger.DetectorLog.Infof("Forward UDM QueryAuthSubsData")
 
-	// TODO: Send request to correct NF by setting correct uri
-	// targetNfUri := "http://udr.free5gc.org:8000"
 	scpContext := scp_context.GetSelf()
 	udrUri := scpContext.UdrUri
 	targetNfUri := udrUri
 
 	response, problemDetails, err := p.Consumer().SendAuthSubsDataGet(targetNfUri, ueId)
-
-	// NOTE: The response from UDR is guaranteed to be correct
-	CurrentAuthProcedure.AuthSubsData = *response
-	logger.DetectorLog.Infof("CurrentAuthProcedure.AuthSubsData: ", CurrentAuthProcedure.AuthSubsData)
 
 	if response != nil {
 		return &HandlerResponse{http.StatusOK, nil, response}

@@ -38,8 +38,10 @@ type ScpContext struct {
 	UpfUri  string
 }
 
-var NFtoUriMap map[string]string
-var scpContext ScpContext
+var (
+	NFtoUriMap map[string]string
+	scpContext ScpContext
+)
 
 func NewContext(scp scp) (*ScpContext, error) {
 	c := &ScpContext{

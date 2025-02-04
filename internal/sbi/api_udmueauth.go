@@ -11,7 +11,6 @@ import (
 
 func (s *Server) getUdmUeAuthEndpoints() []Endpoint {
 	return []Endpoint{
-
 		{
 			Method:  http.MethodPost,
 			Pattern: "/:supiOrSuci/security-information/generate-auth-data",
@@ -23,7 +22,6 @@ func (s *Server) getUdmUeAuthEndpoints() []Endpoint {
 			APIFunc: s.HandleConfirmAuth,
 		},
 	}
-
 }
 
 func (s *Server) apiPostGenerateAuthData(gc *gin.Context) {
@@ -45,7 +43,6 @@ func (s *Server) apiPostGenerateAuthData(gc *gin.Context) {
 func (s *Server) HandleConfirmAuth(gc *gin.Context) {
 	var authEvent models.AuthEvent
 	requestBody, err := gc.GetRawData()
-
 	if err != nil {
 		problemDetail := models.ProblemDetails{
 			Title:  "System failure",

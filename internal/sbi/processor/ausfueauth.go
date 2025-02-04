@@ -16,9 +16,6 @@ func (p *Processor) PostUeAutentications(
 	ausfUri := scpContext.AusfUri
 	targetNfUri := ausfUri
 
-	servingNetworkName = authInfo.ServingNetworkName
-	CurrentAuthProcedure.ServingNetworkName = servingNetworkName
-
 	response, problemDetails, err := p.Consumer().SendUeAuthPostRequest(targetNfUri, &authInfo)
 
 	if response != nil {

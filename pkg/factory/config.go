@@ -20,6 +20,7 @@ const (
 	ServiceNudrDR        string = string(models.ServiceName_NUDR_DR)
 	ServiceNudmSubManage string = string(models.ServiceName_NUDM_SDM)
 )
+
 const (
 	ScpDefaultTLSKeyLogPath  = "./log/scpsslkey.log"
 	ScpDefaultCertPemPath    = "./cert/scp.pem"
@@ -340,7 +341,7 @@ func (c *Config) ServiceList() []Service {
 	c.RLock()
 	defer c.RUnlock()
 
-	if c.Configuration.ServiceList != nil && len(c.Configuration.ServiceList) > 0 {
+	if len(c.Configuration.ServiceList) > 0 {
 		return c.Configuration.ServiceList
 	}
 	return nil

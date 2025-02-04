@@ -257,7 +257,7 @@ func (s *Server) NonSupportAPI(gc *gin.Context) {
 	targetURL := fmt.Sprintf("%s%s", targetUri, gc.Request.URL.RequestURI())
 
 	// Forwarding request
-	forwardReq, err := http.NewRequest(gc.Request.Method, targetURL, gc.Request.Body)
+	forwardReq, err := http.NewRequestWithContext(gc.Request.Context(), gc.Request.Method, targetURL, gc.Request.Body)
 	if err != nil {
 		gc.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create forward request"})
 		return
@@ -277,7 +277,11 @@ func (s *Server) NonSupportAPI(gc *gin.Context) {
 		gc.JSON(http.StatusBadGateway, gin.H{"error": "Failed to forward request"})
 		return
 	}
-	defer forwardResp.Body.Close()
+	defer func() {
+		if closeErr := forwardResp.Body.Close(); closeErr != nil {
+			logger.DetectorLog.Warnln("Failed to close response body:", err)
+		}
+	}()
 
 	// Response status code, header, and body to client
 	gc.Status(forwardResp.StatusCode)

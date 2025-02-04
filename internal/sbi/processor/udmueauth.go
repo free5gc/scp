@@ -21,10 +21,6 @@ func (p *Processor) PostGenerateAuthData(
 	scpContext := scp_context.GetSelf()
 	udmUri := scpContext.UdmUri
 	targetNfUri := udmUri
-	authInfo.ServingNetworkName = CurrentAuthProcedure.ServingNetworkName
-
-	// TODO: Send request to target NF by setting correct uri
-	supi, _ = extractSupi(supiOrSuci)
 
 	response, problemDetails, err := p.Consumer().SendGenerateAuthDataRequest(targetNfUri, supiOrSuci, &authInfo)
 

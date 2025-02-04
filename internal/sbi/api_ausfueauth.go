@@ -9,7 +9,6 @@ import (
 
 func (s *Server) getAusfUeAuthEndpoints() []Endpoint {
 	return []Endpoint{
-
 		{
 			Method:  http.MethodPost,
 			Pattern: "/ue-authentications",

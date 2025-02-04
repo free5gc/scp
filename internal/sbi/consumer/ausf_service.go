@@ -7,6 +7,7 @@ import (
 	"github.com/free5gc/openapi"
 	"github.com/free5gc/openapi/Nausf_UEAuthentication"
 	"github.com/free5gc/openapi/models"
+	"github.com/free5gc/scp/internal/logger"
 )
 
 type nausfService struct {
@@ -40,8 +41,8 @@ func (s *nausfService) getUEAuthenticationClient(uri string) *Nausf_UEAuthentica
 }
 
 func (s *nausfService) SendUeAuthPostRequest(uri string,
-	authInfo *models.AuthenticationInfo) (*models.UeAuthenticationCtx, *models.ProblemDetails, error) {
-
+	authInfo *models.AuthenticationInfo,
+) (*models.UeAuthenticationCtx, *models.ProblemDetails, error) {
 	client := s.getUEAuthenticationClient(uri)
 
 	if client == nil {
@@ -57,6 +58,11 @@ func (s *nausfService) SendUeAuthPostRequest(uri string,
 	if err == nil {
 		return &ueAuthenticationCtx, nil, nil
 	} else if httpResponse != nil {
+		defer func() {
+			if closeErr := httpResponse.Body.Close(); closeErr != nil {
+				logger.DetectorLog.Warnln("Failed to close response body:", err)
+			}
+		}()
 		if httpResponse.Status != err.Error() {
 			return nil, nil, err
 		}
@@ -68,8 +74,8 @@ func (s *nausfService) SendUeAuthPostRequest(uri string,
 }
 
 func (s *nausfService) SendAuth5gAkaConfirmRequest(uri string,
-	authCtxId string, confirmationData *models.ConfirmationData) (*models.ConfirmationDataResponse, *models.ProblemDetails, error) {
-
+	authCtxId string, confirmationData *models.ConfirmationData,
+) (*models.ConfirmationDataResponse, *models.ProblemDetails, error) {
 	client := s.getUEAuthenticationClient(uri)
 
 	if client == nil {
@@ -90,6 +96,11 @@ func (s *nausfService) SendAuth5gAkaConfirmRequest(uri string,
 	if err == nil {
 		return &confirmResult, nil, nil
 	} else if httpResponse != nil {
+		defer func() {
+			if closeErr := httpResponse.Body.Close(); closeErr != nil {
+				logger.DetectorLog.Warnln("Failed to close response body:", err)
+			}
+		}()
 		if httpResponse.Status != err.Error() {
 			return nil, nil, err
 		}
@@ -105,8 +116,8 @@ func (s *nausfService) SendAuth5gAkaConfirmRequest(uri string,
 }
 
 func (s *nausfService) SendEapAuthConfirmRequest(uri string,
-	authCtxId string, eapSessionReq *models.EapSession) (*models.EapSession, *models.ProblemDetails, error) {
-
+	authCtxId string, eapSessionReq *models.EapSession,
+) (*models.EapSession, *models.ProblemDetails, error) {
 	client := s.getUEAuthenticationClient(uri)
 
 	if client == nil {
@@ -126,6 +137,11 @@ func (s *nausfService) SendEapAuthConfirmRequest(uri string,
 	if err == nil {
 		return &eapSession, nil, nil
 	} else if httpResponse != nil {
+		defer func() {
+			if closeErr := httpResponse.Body.Close(); closeErr != nil {
+				logger.DetectorLog.Warnln("Failed to close response body:", err)
+			}
+		}()
 		if httpResponse.Status != err.Error() {
 			return nil, nil, err
 		}

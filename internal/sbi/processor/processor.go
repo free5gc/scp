@@ -29,12 +29,3 @@ func NewProcessor(scp scp) (*Processor, error) {
 
 	return handler, nil
 }
-
-func addLocationheader(header map[string][]string, location string) {
-	locations := header["Location"]
-	if locations == nil {
-		header["Location"] = []string{location}
-	} else {
-		header["Location"] = append(locations, location)
-	}
-}
