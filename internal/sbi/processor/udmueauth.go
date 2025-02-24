@@ -3,10 +3,9 @@ package processor
 import (
 	"net/http"
 
-	"github.com/antihax/optional"
 	"github.com/free5gc/openapi"
-	"github.com/free5gc/openapi/Nudr_DataRepository"
 	"github.com/free5gc/openapi/models"
+	"github.com/free5gc/openapi/udr/DataRepository"
 	scp_context "github.com/free5gc/scp/internal/context"
 	"github.com/free5gc/scp/internal/logger"
 	"github.com/gin-gonic/gin"
@@ -43,15 +42,15 @@ func (p *Processor) ConfirmAuthDataProcedure(
 	authEvent models.AuthEvent,
 	supi string,
 ) {
-	ctx, pd, err := p.Context().GetTokenCtx(models.ServiceName_NUDR_DR, models.NfType_UDR)
+	ctx, pd, err := p.Context().GetTokenCtx(models.ServiceName_NUDR_DR, models.NrfNfManagementNfType_UDR)
 	if err != nil {
 		gc.JSON(int(pd.Status), pd)
 		return
 	}
-	var createAuthParam Nudr_DataRepository.CreateAuthenticationStatusParamOpts
-	optInterface := optional.NewInterface(authEvent)
+	var createAuthParam DataRepository.CreateAuthenticationStatusRequest
+	var optInterface *models.AuthEvent
 	createAuthParam.AuthEvent = optInterface
-
+	createAuthParam.UeId = &supi
 	client, err := p.Consumer().CreateSCPClientToUDR(supi)
 	if err != nil {
 		problemDetails := openapi.ProblemDetailsSystemFailure(err.Error())
@@ -60,23 +59,24 @@ func (p *Processor) ConfirmAuthDataProcedure(
 	}
 
 	resp, err := client.AuthenticationStatusDocumentApi.CreateAuthenticationStatus(
-		ctx, supi, &createAuthParam)
+		ctx, &createAuthParam)
+	// TO-DO: The following error check, resp haven't define in r17
 	if err != nil {
-		problemDetails := &models.ProblemDetails{
-			Status: int32(resp.StatusCode),
-			Cause:  err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails).Cause,
-			Detail: err.Error(),
-		}
+		// 	problemDetails := &models.ProblemDetails{
+		// 		Status: int32(resp.StatusCode),
+		// 		Cause:  err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails).Cause,
+		// 		Detail: err.Error(),
+		// 	}
 
-		logger.DetectorLog.Errorln("ConfirmAuth err:", err.Error())
-		gc.JSON(int(problemDetails.Status), problemDetails)
+		logger.DetectorLog.Errorln("ConfirmAuth err:", err.Error(), "resp: ", resp)
+		// 	gc.JSON(int(problemDetails.Status), problemDetails)
 		return
 	}
-	defer func() {
-		if rspCloseErr := resp.Body.Close(); rspCloseErr != nil {
-			logger.DetectorLog.Errorf("CreateAuthenticationStatus response body cannot close: %+v", rspCloseErr)
-		}
-	}()
+	// defer func() {
+	// 	if rspCloseErr := resp.Body.Close(); rspCloseErr != nil {
+	// 		logger.DetectorLog.Errorf("CreateAuthenticationStatus response body cannot close: %+v", rspCloseErr)
+	// 	}
+	// }()
 
 	gc.Status(http.StatusCreated)
 }

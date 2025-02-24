@@ -4,8 +4,8 @@ import (
 	"sync"
 
 	"github.com/free5gc/openapi"
-	"github.com/free5gc/openapi/Nudr_DataRepository"
 	"github.com/free5gc/openapi/models"
+	"github.com/free5gc/openapi/udr/DataRepository"
 	scp_context "github.com/free5gc/scp/internal/context"
 	"github.com/free5gc/scp/internal/logger"
 )
@@ -14,18 +14,18 @@ type nudrService struct {
 	consumer *Consumer
 
 	mu      sync.RWMutex
-	clients map[string]*Nudr_DataRepository.APIClient
+	clients map[string]*DataRepository.APIClient
 }
 
-func (s *nudrService) getClient(uri string) *Nudr_DataRepository.APIClient {
+func (s *nudrService) getClient(uri string) *DataRepository.APIClient {
 	s.mu.RLock()
 	if client, ok := s.clients[uri]; ok {
 		defer s.mu.RUnlock()
 		return client
 	} else {
-		configuration := Nudr_DataRepository.NewConfiguration()
+		configuration := DataRepository.NewConfiguration()
 		configuration.SetBasePath(uri)
-		cli := Nudr_DataRepository.NewAPIClient(configuration)
+		cli := DataRepository.NewAPIClient(configuration)
 
 		s.mu.RUnlock()
 		s.mu.Lock()
@@ -40,7 +40,7 @@ func (s *nudrService) SendAuthSubsDataGet(uri string,
 ) (*models.AuthenticationSubscription, *models.ProblemDetails, error) {
 	client := s.getClient(uri)
 
-	ctx, _, err := s.consumer.Context().GetTokenCtx(models.ServiceName_NUDR_DR, models.NfType_UDR)
+	ctx, _, err := s.consumer.Context().GetTokenCtx(models.ServiceName_NUDR_DR, models.NrfNfManagementNfType_UDR)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -69,7 +69,7 @@ func (s *nudrService) ModifyAuthenticationPatch(uri string,
 ) (*models.ProblemDetails, error) {
 	client := s.getClient(uri)
 
-	ctx, _, err := s.consumer.Context().GetTokenCtx(models.ServiceName_NUDR_DR, models.NfType_UDR)
+	ctx, _, err := s.consumer.Context().GetTokenCtx(models.ServiceName_NUDR_DR, models.NrfNfManagementNfType_UDR)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +94,7 @@ func (s *nudrService) ModifyAuthenticationPatch(uri string,
 	}
 }
 
-func (s *nudrService) CreateSCPClientToUDR(id string) (*Nudr_DataRepository.APIClient, error) {
+func (s *nudrService) CreateSCPClientToUDR(id string) (*DataRepository.APIClient, error) {
 	uri := scp_context.GetSelf().UdrUri
 
 	s.mu.RLock()
@@ -104,9 +104,9 @@ func (s *nudrService) CreateSCPClientToUDR(id string) (*Nudr_DataRepository.APIC
 		return client, nil
 	}
 
-	cfg := Nudr_DataRepository.NewConfiguration()
+	cfg := DataRepository.NewConfiguration()
 	cfg.SetBasePath(uri)
-	client = Nudr_DataRepository.NewAPIClient(cfg)
+	client = DataRepository.NewAPIClient(cfg)
 
 	s.mu.RUnlock()
 	s.mu.Lock()

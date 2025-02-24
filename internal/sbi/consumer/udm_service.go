@@ -4,8 +4,8 @@ import (
 	"sync"
 
 	"github.com/free5gc/openapi"
-	Nudm_UEAU "github.com/free5gc/openapi/Nudm_UEAuthentication"
 	"github.com/free5gc/openapi/models"
+	Nudm_UEAU "github.com/free5gc/openapi/udm/UEAuthentication"
 	"github.com/free5gc/scp/internal/logger"
 )
 
@@ -44,7 +44,7 @@ func (s *nudmService) SendGenerateAuthDataRequest(uri string,
 ) (*models.AuthenticationInfoResult, *models.ProblemDetails, error) {
 	client := s.getUdmUeauClient(uri)
 
-	ctx, _, err := s.consumer.Context().GetTokenCtx(models.ServiceName_NUDM_UEAU, models.NfType_UDM)
+	ctx, _, err := s.consumer.Context().GetTokenCtx(models.ServiceName_NUDM_UEAU, models.NrfNfManagementNfType_UDM)
 	if err != nil {
 		return nil, nil, err
 	}

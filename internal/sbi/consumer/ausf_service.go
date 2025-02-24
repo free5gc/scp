@@ -5,7 +5,7 @@ import (
 
 	"github.com/antihax/optional"
 	"github.com/free5gc/openapi"
-	"github.com/free5gc/openapi/Nausf_UEAuthentication"
+	"github.com/free5gc/openapi/ausf/UEAuthentication"
 	"github.com/free5gc/openapi/models"
 	"github.com/free5gc/scp/internal/logger"
 )
@@ -15,10 +15,10 @@ type nausfService struct {
 
 	UEAuthenticationMu sync.RWMutex
 
-	UEAuthenticationClients map[string]*Nausf_UEAuthentication.APIClient
+	UEAuthenticationClients map[string]*UEAuthentication.APIClient
 }
 
-func (s *nausfService) getUEAuthenticationClient(uri string) *Nausf_UEAuthentication.APIClient {
+func (s *nausfService) getUEAuthenticationClient(uri string) *UEAuthentication.APIClient {
 	if uri == "" {
 		return nil
 	}
@@ -29,9 +29,9 @@ func (s *nausfService) getUEAuthenticationClient(uri string) *Nausf_UEAuthentica
 		return client
 	}
 
-	configuration := Nausf_UEAuthentication.NewConfiguration()
+	configuration := UEAuthentication.NewConfiguration()
 	configuration.SetBasePath(uri)
-	client = Nausf_UEAuthentication.NewAPIClient(configuration)
+	client = UEAuthentication.NewAPIClient(configuration)
 
 	s.UEAuthenticationMu.RUnlock()
 	s.UEAuthenticationMu.Lock()
@@ -49,7 +49,7 @@ func (s *nausfService) SendUeAuthPostRequest(uri string,
 		return nil, nil, openapi.ReportError("ausf not found")
 	}
 
-	ctx, _, err := s.consumer.Context().GetTokenCtx(models.ServiceName_NAUSF_AUTH, models.NfType_AUSF)
+	ctx, _, err := s.consumer.Context().GetTokenCtx(models.ServiceName_NAUSF_AUTH, models.NrfNfManagementNfType_AUSF)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -82,12 +82,12 @@ func (s *nausfService) SendAuth5gAkaConfirmRequest(uri string,
 		return nil, nil, openapi.ReportError("ausf not found")
 	}
 
-	ctx, _, err := s.consumer.Context().GetTokenCtx(models.ServiceName_NAUSF_AUTH, models.NfType_AUSF)
+	ctx, _, err := s.consumer.Context().GetTokenCtx(models.ServiceName_NAUSF_AUTH, models.NrfNfManagementNfType_AUSF)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	confirmData := &Nausf_UEAuthentication.UeAuthenticationsAuthCtxId5gAkaConfirmationPutParamOpts{
+	confirmData := &UEAuthentication.UeAuthenticationsAuthCtxId5gAkaConfirmationPutParamOpts{
 		ConfirmationData: optional.NewInterface(*confirmationData),
 	}
 
@@ -124,10 +124,10 @@ func (s *nausfService) SendEapAuthConfirmRequest(uri string,
 		return nil, nil, openapi.ReportError("ausf not found")
 	}
 
-	eapAuthMethodParamOpts := &Nausf_UEAuthentication.EapAuthMethodParamOpts{
+	eapAuthMethodParamOpts := &UEAuthentication.EapAuthMethodParamOpts{
 		EapSession: optional.NewInterface(eapSessionReq),
 	}
-	ctx, _, err := s.consumer.Context().GetTokenCtx(models.ServiceName_NAUSF_AUTH, models.NfType_AUSF)
+	ctx, _, err := s.consumer.Context().GetTokenCtx(models.ServiceName_NAUSF_AUTH, models.NrfNfManagementNfType_AUSF)
 	if err != nil {
 		return nil, nil, err
 	}

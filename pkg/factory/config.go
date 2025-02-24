@@ -367,15 +367,15 @@ func (c *Config) TLSKeyPath() string {
 	return ScpDefaultPrivateKeyPath
 }
 
-func (c *Config) NFServices() []models.NfService {
+func (c *Config) NFServices() []models.NrfNfManagementNfService {
 	versions := strings.Split(c.Version(), ".")
 	majorVersionUri := "v" + versions[0]
-	nfServices := []models.NfService{}
+	nfServices := []models.NrfNfManagementNfService{}
 	for i, s := range c.ServiceList() {
-		nfService := models.NfService{
+		nfService := models.NrfNfManagementNfService{
 			ServiceInstanceId: strconv.Itoa(i),
 			ServiceName:       models.ServiceName(s.ServiceName),
-			Versions: &[]models.NfServiceVersion{
+			Versions: []models.NfServiceVersion{
 				{
 					ApiFullVersion:  c.Version(),
 					ApiVersionInUri: majorVersionUri,
@@ -384,10 +384,10 @@ func (c *Config) NFServices() []models.NfService {
 			Scheme:          models.UriScheme(c.SbiScheme()),
 			NfServiceStatus: models.NfServiceStatus_REGISTERED,
 			ApiPrefix:       c.SbiUri(),
-			IpEndPoints: &[]models.IpEndPoint{
+			IpEndPoints: []models.IpEndPoint{
 				{
 					Ipv4Address: c.SbiRegisterIP(),
-					Transport:   models.TransportProtocol_TCP,
+					Transport:   models.NrfNfManagementTransportProtocol(models.TransportProtocol_TCP),
 					Port:        int32(c.SbiPort()),
 				},
 			},
