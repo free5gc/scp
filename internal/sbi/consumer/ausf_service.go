@@ -3,11 +3,9 @@ package consumer
 import (
 	"sync"
 
-	"github.com/antihax/optional"
 	"github.com/free5gc/openapi"
 	"github.com/free5gc/openapi/ausf/UEAuthentication"
 	"github.com/free5gc/openapi/models"
-	"github.com/free5gc/scp/internal/logger"
 )
 
 type nausfService struct {
@@ -41,7 +39,7 @@ func (s *nausfService) getUEAuthenticationClient(uri string) *UEAuthentication.A
 }
 
 func (s *nausfService) SendUeAuthPostRequest(uri string,
-	authInfo *models.AuthenticationInfo,
+	authInfo *UEAuthentication.UeAuthenticationsPostRequest,
 ) (*models.UeAuthenticationCtx, *models.ProblemDetails, error) {
 	client := s.getUEAuthenticationClient(uri)
 
@@ -54,20 +52,9 @@ func (s *nausfService) SendUeAuthPostRequest(uri string,
 		return nil, nil, err
 	}
 
-	ueAuthenticationCtx, httpResponse, err := client.DefaultApi.UeAuthenticationsPost(ctx, *authInfo)
+	ueAuthPostResp, err := client.DefaultApi.UeAuthenticationsPost(ctx, authInfo)
 	if err == nil {
-		return &ueAuthenticationCtx, nil, nil
-	} else if httpResponse != nil {
-		defer func() {
-			if closeErr := httpResponse.Body.Close(); closeErr != nil {
-				logger.DetectorLog.Warnln("Failed to close response body:", err)
-			}
-		}()
-		if httpResponse.Status != err.Error() {
-			return nil, nil, err
-		}
-		problem := err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails)
-		return nil, &problem, nil
+		return &ueAuthPostResp.UeAuthenticationCtx, nil, nil
 	} else {
 		return nil, nil, openapi.ReportError("server no response")
 	}
@@ -87,29 +74,12 @@ func (s *nausfService) SendAuth5gAkaConfirmRequest(uri string,
 		return nil, nil, err
 	}
 
-	confirmData := &UEAuthentication.UeAuthenticationsAuthCtxId5gAkaConfirmationPutParamOpts{
-		ConfirmationData: optional.NewInterface(*confirmationData),
-	}
+	var confirmData *UEAuthentication.UeAuthenticationsAuthCtxId5gAkaConfirmationPutRequest
 
-	confirmResult, httpResponse, err := client.DefaultApi.UeAuthenticationsAuthCtxId5gAkaConfirmationPut(
-		ctx, authCtxId, confirmData)
+	confirmResultResp, err := client.DefaultApi.UeAuthenticationsAuthCtxId5gAkaConfirmationPut(
+		ctx, confirmData)
 	if err == nil {
-		return &confirmResult, nil, nil
-	} else if httpResponse != nil {
-		defer func() {
-			if closeErr := httpResponse.Body.Close(); closeErr != nil {
-				logger.DetectorLog.Warnln("Failed to close response body:", err)
-			}
-		}()
-		if httpResponse.Status != err.Error() {
-			return nil, nil, err
-		}
-		switch httpResponse.StatusCode {
-		case 400, 500:
-			problem := err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails)
-			return nil, &problem, nil
-		}
-		return nil, nil, nil
+		return &confirmResultResp.ConfirmationDataResponse, nil, nil
 	} else {
 		return nil, nil, openapi.ReportError("server no response")
 	}
@@ -124,33 +94,19 @@ func (s *nausfService) SendEapAuthConfirmRequest(uri string,
 		return nil, nil, openapi.ReportError("ausf not found")
 	}
 
-	eapAuthMethodParamOpts := &UEAuthentication.EapAuthMethodParamOpts{
-		EapSession: optional.NewInterface(eapSessionReq),
-	}
+	var eapAuthMethodReq *UEAuthentication.EapAuthMethodRequest
+	eapAuthMethodReq.EapSession = eapSessionReq
+	eapAuthMethodReq.AuthCtxId = &authCtxId
+
 	ctx, _, err := s.consumer.Context().GetTokenCtx(models.ServiceName_NAUSF_AUTH, models.NrfNfManagementNfType_AUSF)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	eapSession, httpResponse, err := client.DefaultApi.EapAuthMethod(
-		ctx, authCtxId, eapAuthMethodParamOpts)
+	eapSessionResp, err := client.DefaultApi.EapAuthMethod(
+		ctx, eapAuthMethodReq)
 	if err == nil {
-		return &eapSession, nil, nil
-	} else if httpResponse != nil {
-		defer func() {
-			if closeErr := httpResponse.Body.Close(); closeErr != nil {
-				logger.DetectorLog.Warnln("Failed to close response body:", err)
-			}
-		}()
-		if httpResponse.Status != err.Error() {
-			return nil, nil, err
-		}
-		switch httpResponse.StatusCode {
-		case 400, 500:
-			problem := err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails)
-			return nil, &problem, nil
-		}
-		return nil, nil, nil
+		return &eapSessionResp.EapSession, nil, nil
 	} else {
 		return nil, nil, openapi.ReportError("server no response")
 	}

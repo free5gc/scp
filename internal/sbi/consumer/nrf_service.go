@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/antihax/optional"
 	"github.com/free5gc/openapi"
 	"github.com/free5gc/openapi/models"
 	"github.com/free5gc/openapi/nrf/NFDiscovery"
@@ -120,9 +119,15 @@ func (s *nnrfService) RegisterNFInstance() error {
 	}
 
 	for {
-		nf, rsp, err = client.NFInstanceIDDocumentApi.RegisterNFInstance(
-			context.TODO(), s.consumer.Context().NfInstID(), *nfProfile)
-		if rsp != nil && rsp.Body != nil {
+		nfInstID := s.consumer.Context().NfInstID()
+		nfInstIDPtr := &nfInstID
+		registerNFInstanceReq := NFManagement.RegisterNFInstanceRequest{
+			NfInstanceID:             nfInstIDPtr,
+			NrfNfManagementNfProfile: nfProfile,
+		}
+
+		rsp, err = client.NFInstanceIDDocumentApi.RegisterNFInstance(context.TODO(), &registerNFInstanceReq)
+		if rsp != nil {
 			if bodyCloseErr := rsp.Body.Close(); bodyCloseErr != nil {
 				logger.ConsumerLog.Errorf("response body cannot close: %+v", bodyCloseErr)
 			}
@@ -180,7 +185,7 @@ func (s *nnrfService) buildNfProfile() (*models.NrfNfManagementNfProfile, error)
 	if len(nfServices) == 0 {
 		return nil, fmt.Errorf("buildNfProfile err: NFServices is Empty")
 	}
-	profile.NfServices = &nfServices
+	profile.NfServices = nfServices
 	return profile, nil
 }
 
@@ -193,19 +198,17 @@ func (s *nnrfService) DeregisterNFInstance() error {
 	}
 
 	client := s.getNFManagementClient(s.consumer.Config().NrfUri())
+	nfInstID := s.consumer.Context().NfInstID()
+	nfInstIDPtr := &nfInstID
+	deregisterNFInstanceReq := NFManagement.DeregisterNFInstanceRequest{
+		NfInstanceID: nfInstIDPtr,
+	}
 
 	rsp, err := client.NFInstanceIDDocumentApi.DeregisterNFInstance(
-		ctx, s.consumer.Context().NfInstID())
-	if rsp != nil && rsp.Body != nil {
-		if bodyCloseErr := rsp.Body.Close(); bodyCloseErr != nil {
-			logger.ConsumerLog.Errorf("response body cannot close: %+v", bodyCloseErr)
-		}
-	}
+		ctx, &deregisterNFInstanceReq)
 	if err != nil {
 		if rsp == nil {
 			return fmt.Errorf("DeregisterNFInstance Error: server no response")
-		} else if rsp.Status != err.Error() {
-			return fmt.Errorf("DeregisterNFInstance Error[%+v]", err)
 		}
 		pd := err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails)
 		return fmt.Errorf("DeregisterNFInstance Failed: Problem[%+v]", pd)
@@ -216,12 +219,12 @@ func (s *nnrfService) DeregisterNFInstance() error {
 func (s *nnrfService) SearchNFInstances(
 	nrfUri string,
 	srvName models.ServiceName,
-	param *NFDiscovery.SearchNFInstancesParamOpts,
+	param *NFDiscovery.SearchNFInstancesRequest,
 ) (*models.NrfNfManagementNfProfile, string, error) {
 	if param == nil {
-		param = &NFDiscovery.SearchNFInstancesParamOpts{}
+		param = &NFDiscovery.SearchNFInstancesRequest{}
 	}
-	param.ServiceNames = optional.NewInterface([]models.ServiceName{srvName})
+	param.ServiceNames = []models.ServiceName{srvName}
 
 	client := s.getNFDiscoveryClient(nrfUri)
 
@@ -229,18 +232,17 @@ func (s *nnrfService) SearchNFInstances(
 	if err != nil {
 		return nil, "", err
 	}
+	targetNfType := serviceNfType[srvName]
+	requesterNfType := models.NrfNfManagementNfType_SCP
+	param.TargetNfType = &targetNfType
+	param.RequesterNfType = &requesterNfType
 
-	res, rsp, err := client.NFInstancesStoreApi.SearchNFInstances(ctx,
-		serviceNfType[srvName], models.NrfNfManagementNfType_SCP, param)
-	if rsp != nil && rsp.Body != nil {
-		if bodyCloseErr := rsp.Body.Close(); bodyCloseErr != nil {
-			logger.ConsumerLog.Errorf("SearchNFInstances err: response body cannot close: %+v", bodyCloseErr)
-		}
-	}
-	if rsp != nil && rsp.StatusCode == http.StatusTemporaryRedirect {
-		err = fmt.Errorf("SearchNFInstances err: Temporary Redirect")
-	}
+	rsp, err := client.NFInstancesStoreApi.SearchNFInstances(ctx, param)
+
 	if err != nil {
+		if rsp != nil {
+			logger.DetectorLog.Println("rsp: ", rsp)
+		}
 		return nil, "", err
 	}
 
