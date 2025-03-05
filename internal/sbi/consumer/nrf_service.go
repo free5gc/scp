@@ -3,7 +3,6 @@ package consumer
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -108,7 +107,6 @@ func (s *nnrfService) getNFManagementClient(uri string) *NFManagement.APIClient 
 }
 
 func (s *nnrfService) RegisterNFInstance() error {
-	var rsp *http.Response
 	var nf models.NrfNfManagementNfProfile
 	var err error
 
@@ -126,28 +124,21 @@ func (s *nnrfService) RegisterNFInstance() error {
 			NrfNfManagementNfProfile: nfProfile,
 		}
 
-		rsp, err = client.NFInstanceIDDocumentApi.RegisterNFInstance(context.TODO(), &registerNFInstanceReq)
-		if rsp != nil {
-			if bodyCloseErr := rsp.Body.Close(); bodyCloseErr != nil {
-				logger.ConsumerLog.Errorf("response body cannot close: %+v", bodyCloseErr)
-			}
-		}
-
-		if err != nil || rsp == nil {
+		rsp, err := client.NFInstanceIDDocumentApi.RegisterNFInstance(context.TODO(), &registerNFInstanceReq)
+		if err != nil {
 			logger.ConsumerLog.Infof("SCP register to NRF Error[%v], sleep 2s and retry", err)
 			time.Sleep(RetryRegisterNrfDuration)
 			continue
 		}
 
-		status := rsp.StatusCode
-		if status == http.StatusOK {
+		// 根據返回的狀態碼進行處理
+		if rsp.ETag != "" {
 			// NFUpdate
 			logger.ConsumerLog.Infof("NFRegister Update")
 			break
-		} else if status == http.StatusCreated {
+		} else if rsp.Location != "" {
 			// NFRegister
-			resourceUri := rsp.Header.Get("Location")
-			// resouceNrfUri := resourceUri[:strings.Index(resourceUri, "/nnrf-nfm/")]
+			resourceUri := rsp.Location
 			s.consumer.Context().SetNfInstID(resourceUri[strings.LastIndex(resourceUri, "/")+1:])
 
 			oauth2 := false
@@ -166,7 +157,7 @@ func (s *nnrfService) RegisterNFInstance() error {
 			logger.ConsumerLog.Infof("NFRegister Created")
 			break
 		} else {
-			logger.ConsumerLog.Infof("NRF return wrong status: %d", status)
+			logger.ConsumerLog.Infof("NRF return wrong status")
 		}
 	}
 	return nil
@@ -220,7 +211,7 @@ func (s *nnrfService) SearchNFInstances(
 	nrfUri string,
 	srvName models.ServiceName,
 	param *NFDiscovery.SearchNFInstancesRequest,
-) (*models.NrfNfManagementNfProfile, string, error) {
+) (*models.NrfNfDiscoveryNfProfile, string, error) {
 	if param == nil {
 		param = &NFDiscovery.SearchNFInstancesRequest{}
 	}
@@ -246,7 +237,7 @@ func (s *nnrfService) SearchNFInstances(
 		return nil, "", err
 	}
 
-	nfProf, uri, err := getProfileAndUri(res.NfInstances, srvName)
+	nfProf, uri, err := getProfileAndUri(rsp.SearchResult.NfInstances, srvName)
 	if err != nil {
 		logger.ConsumerLog.Errorf(err.Error())
 		return nil, "", err
@@ -254,10 +245,10 @@ func (s *nnrfService) SearchNFInstances(
 	return nfProf, uri, nil
 }
 
-func getProfileAndUri(nfInstances []models.NrfNfManagementNfProfile, srvName models.ServiceName) (*models.NrfNfManagementNfProfile, string, error) {
+func getProfileAndUri(nfInstances []models.NrfNfDiscoveryNfProfile, srvName models.ServiceName) (*models.NrfNfDiscoveryNfProfile, string, error) {
 	// select the first ServiceName
 	// TODO: select base on other info
-	var profile *models.NrfNfManagementNfProfile
+	var profile *models.NrfNfDiscoveryNfProfile
 	var uri string
 	for _, nfProfile := range nfInstances {
 		profile = &nfProfile
@@ -273,7 +264,7 @@ func getProfileAndUri(nfInstances []models.NrfNfManagementNfProfile, srvName mod
 }
 
 // searchNFServiceUri returns NF Uri derived from NfProfile with corresponding service
-func searchNFServiceUri(nfProfile models.NrfNfManagementNfProfile, serviceName models.ServiceName,
+func searchNFServiceUri(nfProfile models.NrfNfDiscoveryNfProfile, serviceName models.ServiceName,
 	nfServiceStatus models.NfServiceStatus,
 ) string {
 	if nfProfile.NfServices == nil {
@@ -281,7 +272,7 @@ func searchNFServiceUri(nfProfile models.NrfNfManagementNfProfile, serviceName m
 	}
 
 	nfUri := ""
-	for _, service := range *nfProfile.NfServices {
+	for _, service := range nfProfile.NfServices {
 		if service.ServiceName == serviceName && service.NfServiceStatus == nfServiceStatus {
 			if service.Fqdn != "" {
 				nfUri = string(service.Scheme) + "://" + service.Fqdn
@@ -293,10 +284,10 @@ func searchNFServiceUri(nfProfile models.NrfNfManagementNfProfile, serviceName m
 					return nfUri
 				}
 				nfUri = u.Scheme + "://" + u.Host
-			} else if len(*service.IpEndPoints) != 0 {
+			} else if len(service.IpEndPoints) != 0 {
 				// Select the first IpEndPoint
 				// TODO: select others when failure
-				point := (*service.IpEndPoints)[0]
+				point := (service.IpEndPoints)[0]
 				if point.Ipv4Address != "" {
 					nfUri = getUriFromIpEndPoint(service.Scheme, point.Ipv4Address, point.Port)
 				} else if len(nfProfile.Ipv4Addresses) != 0 {

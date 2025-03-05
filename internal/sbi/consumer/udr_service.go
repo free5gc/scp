@@ -45,21 +45,18 @@ func (s *nudrService) SendAuthSubsDataGet(uri string,
 		return nil, nil, err
 	}
 
-	authSubs, httpResponse, err := client.AuthenticationDataDocumentApi.QueryAuthSubsData(ctx, supi, nil)
+	request := &DataRepository.QueryAuthSubsDataRequest{
+		UeId: &supi,
+	}
+
+	authSubsResponse, err := client.AuthenticationDataDocumentApi.QueryAuthSubsData(ctx, request)
 	if err == nil {
-		return &authSubs, nil, nil
-	} else if httpResponse != nil {
-		defer func() {
-			if closeErr := httpResponse.Body.Close(); closeErr != nil {
-				logger.DetectorLog.Warnln("Failed to close response body:", err)
-			}
-		}()
-		if httpResponse.Status != err.Error() {
-			return nil, nil, err
-		}
-		problem := err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails)
+		return &authSubsResponse.AuthenticationSubscription, nil, nil
+	} else if apiError, ok := err.(openapi.GenericOpenAPIError); ok {
+		problem := apiError.Model().(models.ProblemDetails)
 		return nil, &problem, nil
 	} else {
+		logger.DetectorLog.Errorln("server no response")
 		return nil, nil, openapi.ReportError("server no response")
 	}
 }
@@ -74,22 +71,19 @@ func (s *nudrService) ModifyAuthenticationPatch(uri string,
 		return nil, err
 	}
 
-	httpResponse, err := client.AuthenticationDataDocumentApi.ModifyAuthentication(ctx, supi, patchItemArray)
+	request := &DataRepository.ModifyAuthenticationSubscriptionRequest{
+		UeId:      &supi,
+		PatchItem: patchItemArray,
+	}
 
+	_, err = client.AuthenticationSubscriptionDocumentApi.ModifyAuthenticationSubscription(ctx, request)
 	if err == nil {
 		return nil, nil
-	} else if httpResponse != nil {
-		defer func() {
-			if closeErr := httpResponse.Body.Close(); closeErr != nil {
-				logger.DetectorLog.Warnln("Failed to close response body:", err)
-			}
-		}()
-		if httpResponse.Status != err.Error() {
-			return nil, err
-		}
-		problem := err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails)
+	} else if apiError, ok := err.(openapi.GenericOpenAPIError); ok {
+		problem := apiError.Model().(models.ProblemDetails)
 		return &problem, nil
 	} else {
+		logger.DetectorLog.Errorln("server no response")
 		return nil, openapi.ReportError("server no response")
 	}
 }

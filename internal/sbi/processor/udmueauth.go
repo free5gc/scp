@@ -13,7 +13,7 @@ import (
 
 func (p *Processor) PostGenerateAuthData(
 	supiOrSuci string,
-	authInfo models.AuthenticationInfoRequest,
+	authInfo models.UdmUeauAuthenticationInfoRequest,
 ) *HandlerResponse {
 	logger.ProxyLog.Infof("Forward UDM UE Authentication Request")
 

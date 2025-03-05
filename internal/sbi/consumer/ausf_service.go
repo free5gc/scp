@@ -39,7 +39,7 @@ func (s *nausfService) getUEAuthenticationClient(uri string) *UEAuthentication.A
 }
 
 func (s *nausfService) SendUeAuthPostRequest(uri string,
-	authInfo *UEAuthentication.UeAuthenticationsPostRequest,
+	authInfo models.AuthenticationInfo,
 ) (*models.UeAuthenticationCtx, *models.ProblemDetails, error) {
 	client := s.getUEAuthenticationClient(uri)
 
@@ -52,9 +52,17 @@ func (s *nausfService) SendUeAuthPostRequest(uri string,
 		return nil, nil, err
 	}
 
-	ueAuthPostResp, err := client.DefaultApi.UeAuthenticationsPost(ctx, authInfo)
+	// Let models.AuthenticationInfo convert to *UEAuthentication.UeAuthenticationsPostRequest
+	ueAuthPostReq := &UEAuthentication.UeAuthenticationsPostRequest{
+		AuthenticationInfo: &authInfo,
+	}
+
+	ueAuthPostResp, err := client.DefaultApi.UeAuthenticationsPost(ctx, ueAuthPostReq)
 	if err == nil {
 		return &ueAuthPostResp.UeAuthenticationCtx, nil, nil
+	} else if apiError, ok := err.(openapi.GenericOpenAPIError); ok {
+		problem := apiError.Model().(models.ProblemDetails)
+		return nil, &problem, nil
 	} else {
 		return nil, nil, openapi.ReportError("server no response")
 	}
@@ -94,9 +102,11 @@ func (s *nausfService) SendEapAuthConfirmRequest(uri string,
 		return nil, nil, openapi.ReportError("ausf not found")
 	}
 
-	var eapAuthMethodReq *UEAuthentication.EapAuthMethodRequest
-	eapAuthMethodReq.EapSession = eapSessionReq
-	eapAuthMethodReq.AuthCtxId = &authCtxId
+	// intial eapAuthMethodReq
+	eapAuthMethodReq := &UEAuthentication.EapAuthMethodRequest{
+		EapSession: eapSessionReq,
+		AuthCtxId:  &authCtxId,
+	}
 
 	ctx, _, err := s.consumer.Context().GetTokenCtx(models.ServiceName_NAUSF_AUTH, models.NrfNfManagementNfType_AUSF)
 	if err != nil {

@@ -6,7 +6,6 @@ import (
 	"github.com/free5gc/openapi"
 	"github.com/free5gc/openapi/models"
 	Nudm_UEAU "github.com/free5gc/openapi/udm/UEAuthentication"
-	"github.com/free5gc/scp/internal/logger"
 )
 
 type nudmService struct {
@@ -40,8 +39,8 @@ func (s *nudmService) getUdmUeauClient(uri string) *Nudm_UEAU.APIClient {
 }
 
 func (s *nudmService) SendGenerateAuthDataRequest(uri string,
-	supiOrSuci string, authInfoReq *models.AuthenticationInfoRequest,
-) (*models.AuthenticationInfoResult, *models.ProblemDetails, error) {
+	supiOrSuci string, authInfoReq *models.UdmUeauAuthenticationInfoRequest,
+) (*models.UdmUeauAuthenticationInfoResult, *models.ProblemDetails, error) {
 	client := s.getUdmUeauClient(uri)
 
 	ctx, _, err := s.consumer.Context().GetTokenCtx(models.ServiceName_NUDM_UEAU, models.NrfNfManagementNfType_UDM)
@@ -49,19 +48,16 @@ func (s *nudmService) SendGenerateAuthDataRequest(uri string,
 		return nil, nil, err
 	}
 
-	authInfoResult, httpResponse, err := client.GenerateAuthDataApi.GenerateAuthData(ctx, supiOrSuci, *authInfoReq)
+	authDataRequest := Nudm_UEAU.GenerateAuthDataRequest{
+		SupiOrSuci:                       &supiOrSuci,
+		UdmUeauAuthenticationInfoRequest: authInfoReq,
+	}
+
+	authDataResponse, err := client.GenerateAuthDataApi.GenerateAuthData(ctx, &authDataRequest)
 	if err == nil {
-		return &authInfoResult, nil, nil
-	} else if httpResponse != nil {
-		defer func() {
-			if closeErr := httpResponse.Body.Close(); closeErr != nil {
-				logger.DetectorLog.Warnln("Failed to close response body:", err)
-			}
-		}()
-		if httpResponse.Status != err.Error() {
-			return nil, nil, err
-		}
-		problem := err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails)
+		return &authDataResponse.UdmUeauAuthenticationInfoResult, nil, nil
+	} else if apiError, ok := err.(openapi.GenericOpenAPIError); ok {
+		problem := apiError.Model().(models.ProblemDetails)
 		return nil, &problem, nil
 	} else {
 		return nil, nil, openapi.ReportError("server no response")

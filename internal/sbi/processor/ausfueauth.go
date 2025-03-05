@@ -16,7 +16,7 @@ func (p *Processor) PostUeAutentications(
 	ausfUri := scpContext.AusfUri
 	targetNfUri := ausfUri
 
-	response, problemDetails, err := p.Consumer().SendUeAuthPostRequest(targetNfUri, &authInfo)
+	response, problemDetails, err := p.Consumer().SendUeAuthPostRequest(targetNfUri, authInfo)
 
 	if response != nil {
 		return &HandlerResponse{http.StatusCreated, nil, response}

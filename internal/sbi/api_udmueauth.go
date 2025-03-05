@@ -30,7 +30,7 @@ func (s *Server) apiPostGenerateAuthData(gc *gin.Context) {
 		return
 	}
 
-	var authInfoReq models.AuthenticationInfoRequest
+	var authInfoReq models.UdmUeauAuthenticationInfoRequest
 	if err := s.deserializeData(gc, &authInfoReq, contentType); err != nil {
 		return
 	}
