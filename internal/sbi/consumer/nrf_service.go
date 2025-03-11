@@ -229,7 +229,6 @@ func (s *nnrfService) SearchNFInstances(
 	param.RequesterNfType = &requesterNfType
 
 	rsp, err := client.NFInstancesStoreApi.SearchNFInstances(ctx, param)
-
 	if err != nil {
 		if rsp != nil {
 			logger.DetectorLog.Println("rsp: ", rsp)
@@ -245,7 +244,9 @@ func (s *nnrfService) SearchNFInstances(
 	return nfProf, uri, nil
 }
 
-func getProfileAndUri(nfInstances []models.NrfNfDiscoveryNfProfile, srvName models.ServiceName) (*models.NrfNfDiscoveryNfProfile, string, error) {
+func getProfileAndUri(nfInstances []models.NrfNfDiscoveryNfProfile, srvName models.ServiceName) (
+	*models.NrfNfDiscoveryNfProfile, string, error,
+) {
 	// select the first ServiceName
 	// TODO: select base on other info
 	var profile *models.NrfNfDiscoveryNfProfile

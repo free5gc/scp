@@ -102,7 +102,7 @@ func (s *nausfService) SendEapAuthConfirmRequest(uri string,
 		return nil, nil, openapi.ReportError("ausf not found")
 	}
 
-	// intial eapAuthMethodReq
+	// initial eapAuthMethodReq
 	eapAuthMethodReq := &UEAuthentication.EapAuthMethodRequest{
 		EapSession: eapSessionReq,
 		AuthCtxId:  &authCtxId,
