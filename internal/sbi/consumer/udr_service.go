@@ -4,10 +4,9 @@ import (
 	"sync"
 
 	"github.com/free5gc/openapi"
-	"github.com/free5gc/openapi/Nudr_DataRepository"
 	"github.com/free5gc/openapi/models"
+	Nudr_DataRepository "github.com/free5gc/openapi/udr/DataRepository"
 	scp_context "github.com/free5gc/scp/internal/context"
-	"github.com/free5gc/scp/internal/logger"
 )
 
 type nudrService struct {
@@ -40,27 +39,23 @@ func (s *nudrService) SendAuthSubsDataGet(uri string,
 ) (*models.AuthenticationSubscription, *models.ProblemDetails, error) {
 	client := s.getClient(uri)
 
-	ctx, _, err := s.consumer.Context().GetTokenCtx(models.ServiceName_NUDR_DR, models.NfType_UDR)
+	ctx, _, err := s.consumer.Context().GetTokenCtx(models.ServiceName_NUDR_DR, models.NrfNfManagementNfType_UDR)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	authSubs, httpResponse, err := client.AuthenticationDataDocumentApi.QueryAuthSubsData(ctx, supi, nil)
+	req := &Nudr_DataRepository.QueryAuthSubsDataRequest{
+		UeId: &supi,
+	}
+	res, err := client.AuthenticationDataDocumentApi.QueryAuthSubsData(ctx, req)
 	if err == nil {
-		return &authSubs, nil, nil
-	} else if httpResponse != nil {
-		defer func() {
-			if closeErr := httpResponse.Body.Close(); closeErr != nil {
-				logger.DetectorLog.Warnln("Failed to close response body:", err)
-			}
-		}()
-		if httpResponse.Status != err.Error() {
-			return nil, nil, err
-		}
-		problem := err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails)
-		return nil, &problem, nil
+		return &res.AuthenticationSubscription, nil, nil
 	} else {
-		return nil, nil, openapi.ReportError("server no response")
+		if apiErr, ok := err.(openapi.GenericOpenAPIError); ok {
+			problem := apiErr.Model().(models.ProblemDetails)
+			return nil, &problem, nil
+		}
+		return nil, nil, err
 	}
 }
 
@@ -69,28 +64,26 @@ func (s *nudrService) ModifyAuthenticationPatch(uri string,
 ) (*models.ProblemDetails, error) {
 	client := s.getClient(uri)
 
-	ctx, _, err := s.consumer.Context().GetTokenCtx(models.ServiceName_NUDR_DR, models.NfType_UDR)
+	ctx, _, err := s.consumer.Context().GetTokenCtx(models.ServiceName_NUDR_DR, models.NrfNfManagementNfType_UDR)
 	if err != nil {
 		return nil, err
 	}
 
-	httpResponse, err := client.AuthenticationDataDocumentApi.ModifyAuthentication(ctx, supi, patchItemArray)
+	req := &Nudr_DataRepository.ModifyAuthenticationSubscriptionRequest{
+		UeId:      &supi,
+		PatchItem: patchItemArray,
+	}
+	_, err = client.AuthenticationSubscriptionDocumentApi.ModifyAuthenticationSubscription(ctx, req)
 
 	if err == nil {
 		return nil, nil
-	} else if httpResponse != nil {
-		defer func() {
-			if closeErr := httpResponse.Body.Close(); closeErr != nil {
-				logger.DetectorLog.Warnln("Failed to close response body:", err)
-			}
-		}()
-		if httpResponse.Status != err.Error() {
-			return nil, err
-		}
-		problem := err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails)
-		return &problem, nil
 	} else {
-		return nil, openapi.ReportError("server no response")
+		if apiErr, ok := err.(openapi.GenericOpenAPIError); ok {
+			problem := apiErr.Model().(models.ProblemDetails)
+			return &problem, nil
+		}
+		pd := models.ProblemDetails{Detail: err.Error()}
+		return &pd, nil
 	}
 }
 

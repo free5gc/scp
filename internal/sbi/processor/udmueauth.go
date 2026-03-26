@@ -3,10 +3,9 @@ package processor
 import (
 	"net/http"
 
-	"github.com/antihax/optional"
 	"github.com/free5gc/openapi"
-	"github.com/free5gc/openapi/Nudr_DataRepository"
 	"github.com/free5gc/openapi/models"
+	Nudr_DataRepository "github.com/free5gc/openapi/udr/DataRepository"
 	scp_context "github.com/free5gc/scp/internal/context"
 	"github.com/free5gc/scp/internal/logger"
 	"github.com/gin-gonic/gin"
@@ -22,7 +21,16 @@ func (p *Processor) PostGenerateAuthData(
 	udmUri := scpContext.UdmUri
 	targetNfUri := udmUri
 
-	response, problemDetails, err := p.Consumer().SendGenerateAuthDataRequest(targetNfUri, supiOrSuci, &authInfo)
+	udmReq := models.UdmUeauAuthenticationInfoRequest{
+		SupportedFeatures:     authInfo.SupportedFeatures,
+		ServingNetworkName:    authInfo.ServingNetworkName,
+		ResynchronizationInfo: authInfo.ResynchronizationInfo,
+		AusfInstanceId:        authInfo.AusfInstanceId,
+		CellCagInfo:           authInfo.CellCagInfo,
+		N5gcInd:               authInfo.N5gcInd,
+	}
+
+	response, problemDetails, err := p.Consumer().SendGenerateAuthDataRequest(targetNfUri, supiOrSuci, &udmReq)
 
 	if response != nil {
 		return &HandlerResponse{http.StatusOK, nil, response}
@@ -43,14 +51,15 @@ func (p *Processor) ConfirmAuthDataProcedure(
 	authEvent models.AuthEvent,
 	supi string,
 ) {
-	ctx, pd, err := p.Context().GetTokenCtx(models.ServiceName_NUDR_DR, models.NfType_UDR)
+	ctx, pd, err := p.Context().GetTokenCtx(models.ServiceName_NUDR_DR, models.NrfNfManagementNfType_UDR)
 	if err != nil {
 		gc.JSON(int(pd.Status), pd)
 		return
 	}
-	var createAuthParam Nudr_DataRepository.CreateAuthenticationStatusParamOpts
-	optInterface := optional.NewInterface(authEvent)
-	createAuthParam.AuthEvent = optInterface
+	req := &Nudr_DataRepository.CreateAuthenticationStatusRequest{
+		UeId:      &supi,
+		AuthEvent: &authEvent,
+	}
 
 	client, err := p.Consumer().CreateSCPClientToUDR(supi)
 	if err != nil {
@@ -59,12 +68,20 @@ func (p *Processor) ConfirmAuthDataProcedure(
 		return
 	}
 
-	resp, err := client.AuthenticationStatusDocumentApi.CreateAuthenticationStatus(
-		ctx, supi, &createAuthParam)
+	resp, err := client.AuthenticationStatusDocumentApi.CreateAuthenticationStatus(ctx, req)
 	if err != nil {
+		status := int32(http.StatusInternalServerError)
+		cause := err.Error()
+		if apiErr, ok := err.(openapi.GenericOpenAPIError); ok {
+			if pd, ok := apiErr.Model().(models.ProblemDetails); ok {
+				status = pd.Status
+				cause = pd.Cause
+			}
+		}
+
 		problemDetails := &models.ProblemDetails{
-			Status: int32(resp.StatusCode),
-			Cause:  err.(openapi.GenericOpenAPIError).Model().(models.ProblemDetails).Cause,
+			Status: status,
+			Cause:  cause,
 			Detail: err.Error(),
 		}
 
@@ -72,11 +89,7 @@ func (p *Processor) ConfirmAuthDataProcedure(
 		gc.JSON(int(problemDetails.Status), problemDetails)
 		return
 	}
-	defer func() {
-		if rspCloseErr := resp.Body.Close(); rspCloseErr != nil {
-			logger.DetectorLog.Errorf("CreateAuthenticationStatus response body cannot close: %+v", rspCloseErr)
-		}
-	}()
-
+	_ = resp
+	// No response body to close
 	gc.Status(http.StatusCreated)
 }

@@ -1,11 +1,11 @@
 package consumer
 
 import (
-	"github.com/free5gc/openapi/Nausf_UEAuthentication"
-	"github.com/free5gc/openapi/Nnrf_NFDiscovery"
-	"github.com/free5gc/openapi/Nnrf_NFManagement"
-	"github.com/free5gc/openapi/Nudm_UEAuthentication"
-	"github.com/free5gc/openapi/Nudr_DataRepository"
+	Nausf_UEAuthentication "github.com/free5gc/openapi/ausf/UEAuthentication"
+	Nnrf_NFDiscovery "github.com/free5gc/openapi/nrf/NFDiscovery"
+	Nnrf_NFManagement "github.com/free5gc/openapi/nrf/NFManagement"
+	Nudm_UEAuthentication "github.com/free5gc/openapi/udm/UEAuthentication"
+	Nudr_DataRepository "github.com/free5gc/openapi/udr/DataRepository"
 	scp_context "github.com/free5gc/scp/internal/context"
 	"github.com/free5gc/scp/pkg/factory"
 )

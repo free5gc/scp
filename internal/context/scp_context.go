@@ -107,13 +107,13 @@ func (c *ScpContext) SetNfInstID(id string) {
 	logger.CtxLog.Infof("Set nfInstID: [%s]", c.nfInstID)
 }
 
-func (c *ScpContext) GetTokenCtx(serviceName models.ServiceName, targetNF models.NfType) (
+func (c *ScpContext) GetTokenCtx(serviceName models.ServiceName, targetNF models.NrfNfManagementNfType) (
 	context.Context, *models.ProblemDetails, error,
 ) {
 	if !c.OAuth2Required {
 		return context.TODO(), nil, nil
 	}
-	return oauth.GetTokenCtx(models.NfType_SCP, targetNF,
+	return oauth.GetTokenCtx(models.NrfNfManagementNfType_SCP, targetNF,
 		c.nfInstID, c.Config().NrfUri(), string(serviceName))
 }
 
