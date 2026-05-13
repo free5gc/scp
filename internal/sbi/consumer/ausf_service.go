@@ -82,7 +82,10 @@ func (s *nausfService) SendAuth5gAkaConfirmRequest(uri string,
 		return nil, nil, err
 	}
 
-	var confirmData *UEAuthentication.UeAuthenticationsAuthCtxId5gAkaConfirmationPutRequest
+	confirmData := &UEAuthentication.UeAuthenticationsAuthCtxId5gAkaConfirmationPutRequest{
+		AuthCtxId:        &authCtxId,
+		ConfirmationData: confirmationData,
+	}
 
 	confirmResultResp, err := client.DefaultApi.UeAuthenticationsAuthCtxId5gAkaConfirmationPut(
 		ctx, confirmData)

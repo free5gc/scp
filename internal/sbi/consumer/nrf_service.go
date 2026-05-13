@@ -238,7 +238,7 @@ func (s *nnrfService) SearchNFInstances(
 
 	nfProf, uri, err := getProfileAndUri(rsp.SearchResult.NfInstances, srvName)
 	if err != nil {
-		logger.ConsumerLog.Errorf(err.Error())
+		logger.ConsumerLog.Error(err)
 		return nil, "", err
 	}
 	return nfProf, uri, nil

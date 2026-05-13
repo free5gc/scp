@@ -97,11 +97,10 @@ func (c *Configuration) validate() (bool, error) {
 		}
 	}
 	for i, s := range c.ServiceList {
-		switch {
-		case s.ServiceName == ServiceNausfAuth:
-		case s.ServiceName == ServiceNudmUeau:
+		switch s.ServiceName {
+		case ServiceNausfAuth, ServiceNudmUeau:
 		default:
-			err := errors.New("Invalid serviceList[" + strconv.Itoa(i) + "]: " +
+			err := errors.New("invalid serviceList[" + strconv.Itoa(i) + "]: " +
 				s.ServiceName + ", should be " + ServiceNausfAuth + " or " + ServiceNudmUeau)
 			return false, appendInvalid(err)
 		}
@@ -157,7 +156,7 @@ func appendInvalid(err error) error {
 	es, ok := err.(govalidator.Errors)
 	if ok {
 		for _, e := range es.Errors() {
-			errs = append(errs, fmt.Errorf("Invalid %w", e))
+			errs = append(errs, fmt.Errorf("invalid %w", e))
 		}
 	} else {
 		errs = append(errs, err)

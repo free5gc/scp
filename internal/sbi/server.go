@@ -138,13 +138,14 @@ func (s *Server) startServer(wg *sync.WaitGroup) {
 
 	var err error
 	scheme := s.Config().SbiScheme()
-	if scheme == "http" {
+	switch scheme {
+	case "http":
 		err = s.httpServer.ListenAndServe()
-	} else if scheme == "https" {
+	case "https":
 		// TODO: use config file to config path
 		err = s.httpServer.ListenAndServeTLS(s.Config().TLSPemPath(), s.Config().TLSKeyPath())
-	} else {
-		err = fmt.Errorf("No support this scheme[%s]", scheme)
+	default:
+		err = fmt.Errorf("no support this scheme[%s]", scheme)
 	}
 
 	if err != nil && err != http.ErrServerClosed {
@@ -157,7 +158,7 @@ func checkContentTypeIsJSON(gc *gin.Context) (string, error) {
 	var err error
 	contentType := gc.GetHeader("Content-Type")
 	if openapi.KindOfMediaType(contentType) != openapi.MediaKindJSON {
-		err = fmt.Errorf("Wrong content type %q", contentType)
+		err = fmt.Errorf("wrong content type %q", contentType)
 	}
 
 	if err != nil {

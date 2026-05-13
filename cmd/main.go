@@ -57,7 +57,7 @@ func action(cliCtx *cli.Context) error {
 
 	scp, err := scpapp.NewApp(cfg, tlsKeyLogPath)
 	if err != nil {
-		return fmt.Errorf("New SCP err: %+v", err)
+		return fmt.Errorf("new SCP: %w", err)
 	}
 
 	if err := scp.Run(); err != nil {
