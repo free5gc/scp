@@ -1,6 +1,7 @@
 package sbi
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -8,8 +9,11 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/free5gc/openapi"
+	"github.com/free5gc/openapi/mediatype"
+	"github.com/free5gc/openapi/models"
 	scp_context "github.com/free5gc/scp/internal/context"
 	"github.com/free5gc/scp/internal/logger"
 	"github.com/free5gc/scp/internal/sbi/processor"
@@ -66,6 +70,17 @@ func NewServer(scp scp, tlsKeyLogPath string) (*Server, error) {
 	}
 
 	s.router = logger_util.NewGinWithLogrus(logger.GinLog)
+	s.router.Use(cors.New(cors.Config{
+		AllowMethods: []string{"GET", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"},
+		AllowHeaders: []string{
+			"Origin", "Content-Length", "Content-Type", "User-Agent",
+			"Referrer", "Host", "Token", "X-Requested-With",
+			"If-None-Match", "If-Modified-Since",
+		},
+		ExposeHeaders:   []string{"Content-Length", "ETag", "Last-Modified", "Cache-Control"},
+		AllowAllOrigins: true,
+		MaxAge:          CorsConfigMaxAge,
+	}))
 
 	endpoints := s.getAusfUeAuthEndpoints()
 	group := s.router.Group(factory.NausfAuthUriPrefix)
@@ -85,18 +100,6 @@ func NewServer(scp scp, tlsKeyLogPath string) (*Server, error) {
 
 	// For not found API
 	s.router.NoRoute(s.NonSupportAPI)
-
-	s.router.Use(cors.New(cors.Config{
-		AllowMethods: []string{"GET", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"},
-		AllowHeaders: []string{
-			"Origin", "Content-Length", "Content-Type", "User-Agent",
-			"Referrer", "Host", "Token", "X-Requested-With",
-		},
-		ExposeHeaders:    []string{"Content-Length"},
-		AllowCredentials: true,
-		AllowAllOrigins:  true,
-		MaxAge:           CorsConfigMaxAge,
-	}))
 
 	bindAddr := s.Config().SbiBindingAddr()
 	logger.SBILog.Infof("Binding addr: [%s]", bindAddr)
@@ -118,8 +121,13 @@ func (s *Server) Run(wg *sync.WaitGroup) error {
 func (s *Server) Stop() {
 	if s.httpServer != nil {
 		logger.SBILog.Infof("Stop SBI server (listen on %s)", s.httpServer.Addr)
-		if err := s.httpServer.Close(); err != nil {
-			logger.SBILog.Errorf("Could not close SBI server: %#v", err)
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if err := s.httpServer.Shutdown(ctx); err != nil {
+			logger.SBILog.Errorf("Graceful shutdown failed: %#v", err)
+			if closeErr := s.httpServer.Close(); closeErr != nil {
+				logger.SBILog.Errorf("Could not close SBI server: %#v", closeErr)
+			}
 		}
 	}
 }
@@ -155,16 +163,13 @@ func (s *Server) startServer(wg *sync.WaitGroup) {
 }
 
 func checkContentTypeIsJSON(gc *gin.Context) (string, error) {
-	var err error
 	contentType := gc.GetHeader("Content-Type")
-	if openapi.KindOfMediaType(contentType) != openapi.MediaKindJSON {
-		err = fmt.Errorf("wrong content type %q", contentType)
-	}
-
-	if err != nil {
+	if mediatype.KindOfMediaType(contentType) != mediatype.MediaKindJSON {
+		err := fmt.Errorf("unsupported content type %q", contentType)
 		logger.SBILog.Error(err)
-		gc.JSON(http.StatusInternalServerError,
-			openapi.ProblemDetailsMalformedReqSyntax(err.Error()))
+		sendProblem(gc, http.StatusUnsupportedMediaType, &models.ProblemDetails{
+			Status: http.StatusUnsupportedMediaType, Cause: "UNSUPPORTED_MEDIA_TYPE", Detail: err.Error(),
+		})
 		return "", err
 	}
 
@@ -175,49 +180,57 @@ func (s *Server) deserializeData(gc *gin.Context, data interface{}, contentType 
 	reqBody, err := gc.GetRawData()
 	if err != nil {
 		logger.SBILog.Errorf("Get Request Body error: %+v", err)
-		gc.JSON(http.StatusInternalServerError,
-			openapi.ProblemDetailsSystemFailure(err.Error()))
+		sendProblem(gc, http.StatusInternalServerError, openapi.ProblemDetailsSystemFailure(err.Error()))
 		return err
 	}
 
 	err = openapi.Deserialize(data, reqBody, contentType)
 	if err != nil {
 		logger.SBILog.Errorf("Deserialize Request Body error: %+v", err)
-		gc.JSON(http.StatusBadRequest,
-			openapi.ProblemDetailsMalformedReqSyntax(err.Error()))
+		sendProblem(gc, http.StatusBadRequest, openapi.ProblemDetailsMalformedReqSyntax(err.Error()))
 		return err
 	}
 
 	return nil
 }
 
-func (s *Server) buildAndSendHttpResponse(gc *gin.Context, hdlRsp *processor.HandlerResponse, multipart bool) {
-	if hdlRsp.Status == 0 {
+func (s *Server) buildAndSendHttpResponse(gc *gin.Context, hdlRsp *processor.HandlerResponse) {
+	if hdlRsp == nil || hdlRsp.Status == 0 {
 		// No Response to send
 		return
 	}
-
 	rsp := httpwrapper.NewResponse(hdlRsp.Status, hdlRsp.Headers, hdlRsp.Body)
-
 	buildHttpResponseHeader(gc, rsp)
-
-	var rspBody []byte
-	var contentType string
-	var err error
-	if multipart {
-		rspBody, contentType, err = openapi.MultipartSerialize(rsp.Body)
-	} else {
-		// TODO: support other JSON content-type
-		rspBody, err = openapi.Serialize(rsp.Body, "application/json")
+	if rsp.Status == http.StatusNoContent || rsp.Status == http.StatusNotModified || rsp.Body == nil {
+		gc.Status(rsp.Status)
+		gc.Writer.WriteHeaderNow()
+		return
+	}
+	contentType := hdlRsp.ContentType
+	if contentType == "" {
 		contentType = "application/json"
 	}
+	if rawBody, ok := rsp.Body.([]byte); ok {
+		gc.Data(rsp.Status, contentType, rawBody)
+		return
+	}
+	serializedContentType, rspBody, err := openapi.Serialize(rsp.Body, contentType)
 
 	if err != nil {
 		logger.SBILog.Errorln(err)
-		gc.JSON(http.StatusInternalServerError, openapi.ProblemDetailsSystemFailure(err.Error()))
+		sendProblem(gc, http.StatusInternalServerError, openapi.ProblemDetailsSystemFailure(err.Error()))
 	} else {
-		gc.Data(rsp.Status, contentType, rspBody)
+		gc.Data(rsp.Status, serializedContentType, rspBody)
 	}
+}
+
+func sendProblem(gc *gin.Context, status int, problem *models.ProblemDetails) {
+	contentType, body, err := openapi.Serialize(problem, "application/problem+json")
+	if err != nil {
+		gc.Status(http.StatusInternalServerError)
+		return
+	}
+	gc.Data(status, contentType, body)
 }
 
 func buildHttpResponseHeader(gc *gin.Context, rsp *httpwrapper.Response) {
@@ -238,18 +251,22 @@ func buildHttpResponseHeader(gc *gin.Context, rsp *httpwrapper.Response) {
 func (s *Server) NonSupportAPI(gc *gin.Context) {
 	uriPath := gc.Request.URL.Path
 	logger.DetectorLog.Infoln("Handle not support API: ", uriPath)
+	if isPathAtOrBelow(uriPath, "/nudm-sdm/v1") || isPathAtOrBelow(uriPath, "/nudr-dr/v1") {
+		gc.Status(http.StatusNotFound)
+		return
+	}
 
 	targetUri := ""
 	targetNF, err := extractNFName(uriPath)
 	if err != nil {
 		logger.DetectorLog.Errorf("Non support API format: %s\n", uriPath)
+		gc.Status(http.StatusNotFound)
 		return
 	}
-	if scp_context.NFtoUriMap[strings.ToUpper(targetNF)] != "" {
-		targetUri = scp_context.NFtoUriMap[strings.ToUpper(targetNF)]
-	}
+	targetUri = s.Context().URIForNF(strings.ToUpper(targetNF))
 	if targetUri == "" {
 		logger.DetectorLog.Errorf("Non support API format: %s\n", uriPath)
+		gc.Status(http.StatusNotFound)
 		return
 	}
 
@@ -272,7 +289,7 @@ func (s *Server) NonSupportAPI(gc *gin.Context) {
 	}
 
 	// Send forwarding request
-	client := &http.Client{}
+	client := &http.Client{CheckRedirect: openapi.RejectRedirects}
 	forwardResp, err := client.Do(forwardReq)
 	if err != nil {
 		gc.JSON(http.StatusBadGateway, gin.H{"error": "Failed to forward request"})
@@ -280,21 +297,25 @@ func (s *Server) NonSupportAPI(gc *gin.Context) {
 	}
 	defer func() {
 		if closeErr := forwardResp.Body.Close(); closeErr != nil {
-			logger.DetectorLog.Warnln("Failed to close response body:", err)
+			logger.DetectorLog.Warnln("Failed to close response body:", closeErr)
 		}
 	}()
 
 	// Response status code, header, and body to client
-	gc.Status(forwardResp.StatusCode)
 	for key, values := range forwardResp.Header {
 		for _, value := range values {
 			gc.Writer.Header().Add(key, value)
 		}
 	}
+	gc.Status(forwardResp.StatusCode)
 	_, err = io.Copy(gc.Writer, forwardResp.Body)
 	if err != nil {
 		gc.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to write response"})
 	}
+}
+
+func isPathAtOrBelow(path, prefix string) bool {
+	return path == prefix || strings.HasPrefix(path, prefix+"/")
 }
 
 func extractNFName(uri string) (string, error) {

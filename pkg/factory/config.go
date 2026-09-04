@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"strings"
 	"sync"
 
 	"github.com/asaskevich/govalidator"
@@ -15,10 +14,10 @@ import (
 )
 
 const (
-	ServiceNausfAuth     string = string(models.ServiceName_NAUSF_AUTH)
-	ServiceNudmUeau      string = string(models.ServiceName_NUDM_UEAU)
-	ServiceNudrDR        string = string(models.ServiceName_NUDR_DR)
-	ServiceNudmSubManage string = string(models.ServiceName_NUDM_SDM)
+	ServiceNausfAuth     string = string(models.Nrf_NFMgmt_ServiceName_NAUSF_AUTH)
+	ServiceNudmUeau      string = string(models.Nrf_NFMgmt_ServiceName_NUDM_UEAU)
+	ServiceNudrDR        string = string(models.Nrf_NFMgmt_ServiceName_NUDR_DR)
+	ServiceNudmSubManage string = string(models.Nrf_NFMgmt_ServiceName_NUDM_SDM)
 )
 
 const (
@@ -33,9 +32,21 @@ const (
 	ScpDefaultNrfUri         = "https://127.0.0.10:8000"
 	NausfAuthUriPrefix       = "/" + ServiceNausfAuth + "/v1"
 	NudmUeauUriPrefix        = "/" + ServiceNudmUeau + "/v1"
-	NudmSubManageUriPrefix   = "/" + ServiceNudmSubManage + "/v1"
-	NudrDRUriPrefix          = "/" + ServiceNudrDR + "/v1"
+	NudmSubManageUriPrefix   = "/" + ServiceNudmSubManage + "/v2"
+	NudrDRUriPrefix          = "/" + ServiceNudrDR + "/v2"
 )
+
+type serviceAPIVersion struct {
+	uri  string
+	full string
+}
+
+var serviceAPIVersions = map[string]serviceAPIVersion{
+	ServiceNausfAuth:     {uri: "v1", full: "1.2.3"},
+	ServiceNudmUeau:      {uri: "v1", full: "1.2.2"},
+	ServiceNudmSubManage: {uri: "v2", full: "2.2.5"},
+	ServiceNudrDR:        {uri: "v2", full: "2.2.5"},
+}
 
 type Config struct {
 	Info          *Info          `yaml:"info" valid:"required"`
@@ -98,10 +109,10 @@ func (c *Configuration) validate() (bool, error) {
 	}
 	for i, s := range c.ServiceList {
 		switch s.ServiceName {
-		case ServiceNausfAuth, ServiceNudmUeau:
+		case ServiceNausfAuth, ServiceNudmUeau, ServiceNudmSubManage, ServiceNudrDR:
 		default:
 			err := errors.New("invalid serviceList[" + strconv.Itoa(i) + "]: " +
-				s.ServiceName + ", should be " + ServiceNausfAuth + " or " + ServiceNudmUeau)
+				s.ServiceName + ", unsupported service")
 			return false, appendInvalid(err)
 		}
 	}
@@ -346,7 +357,7 @@ func (c *Config) ServiceList() []Service {
 	return nil
 }
 
-func (c *Config) TLSPemPath() string {
+func (c *Config) GetCertPemPath() string {
 	c.RLock()
 	defer c.RUnlock()
 
@@ -356,7 +367,7 @@ func (c *Config) TLSPemPath() string {
 	return ScpDefaultCertPemPath
 }
 
-func (c *Config) TLSKeyPath() string {
+func (c *Config) GetCertKeyPath() string {
 	c.RLock()
 	defer c.RUnlock()
 
@@ -366,27 +377,37 @@ func (c *Config) TLSKeyPath() string {
 	return ScpDefaultPrivateKeyPath
 }
 
-func (c *Config) NFServices() []models.NrfNfManagementNfService {
-	versions := strings.Split(c.Version(), ".")
-	majorVersionUri := "v" + versions[0]
-	nfServices := []models.NrfNfManagementNfService{}
+func (c *Config) TLSPemPath() string {
+	return c.GetCertPemPath()
+}
+
+func (c *Config) TLSKeyPath() string {
+	return c.GetCertKeyPath()
+}
+
+func (c *Config) NFServices() []models.Nrf_NFMgmt_NFService {
+	nfServices := []models.Nrf_NFMgmt_NFService{}
 	for i, s := range c.ServiceList() {
-		nfService := models.NrfNfManagementNfService{
+		apiVersion, ok := serviceAPIVersions[s.ServiceName]
+		if !ok {
+			continue
+		}
+		nfService := models.Nrf_NFMgmt_NFService{
 			ServiceInstanceId: strconv.Itoa(i),
-			ServiceName:       models.ServiceName(s.ServiceName),
-			Versions: []models.NfServiceVersion{
+			ServiceName:       models.Nrf_NFMgmt_ServiceName(s.ServiceName),
+			Versions: []models.Nrf_NFMgmt_NFServiceVersion{
 				{
-					ApiFullVersion:  c.Version(),
-					ApiVersionInUri: majorVersionUri,
+					ApiFullVersion:  apiVersion.full,
+					ApiVersionInUri: apiVersion.uri,
 				},
 			},
 			Scheme:          models.UriScheme(c.SbiScheme()),
-			NfServiceStatus: models.NfServiceStatus_REGISTERED,
+			NfServiceStatus: models.Nrf_NFMgmt_NFServiceStatus_REGISTERED,
 			ApiPrefix:       c.SbiUri(),
-			IpEndPoints: []models.IpEndPoint{
+			IpEndPoints: []models.Nrf_NFMgmt_IpEndPoint{
 				{
 					Ipv4Address: c.SbiRegisterIP(),
-					Transport:   models.NrfNfManagementTransportProtocol(models.TransportProtocol_TCP),
+					Transport:   models.Nrf_NFMgmt_TransportProtocol_TCP,
 					Port:        int32(c.SbiPort()),
 				},
 			},

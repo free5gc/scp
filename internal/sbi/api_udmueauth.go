@@ -3,7 +3,6 @@ package sbi
 import (
 	"net/http"
 
-	"github.com/free5gc/openapi"
 	"github.com/free5gc/openapi/models"
 	"github.com/free5gc/scp/internal/logger"
 	"github.com/gin-gonic/gin"
@@ -30,46 +29,28 @@ func (s *Server) apiPostGenerateAuthData(gc *gin.Context) {
 		return
 	}
 
-	var authInfoReq models.UdmUeauAuthenticationInfoRequest
+	var authInfoReq models.Udm_UEAU_AuthenticationInfoRequest
 	if err := s.deserializeData(gc, &authInfoReq, contentType); err != nil {
 		return
 	}
 
-	hdlRsp := s.Processor().PostGenerateAuthData(gc.Param("supiOrSuci"), authInfoReq)
+	hdlRsp := s.Processor().PostGenerateAuthData(
+		gc.Request.Context(), gc.Param("supiOrSuci"), authInfoReq)
 
-	s.buildAndSendHttpResponse(gc, hdlRsp, false)
+	s.buildAndSendHttpResponse(gc, hdlRsp)
 }
 
 func (s *Server) HandleConfirmAuth(gc *gin.Context) {
-	var authEvent models.AuthEvent
-	requestBody, err := gc.GetRawData()
+	contentType, err := checkContentTypeIsJSON(gc)
 	if err != nil {
-		problemDetail := models.ProblemDetails{
-			Title:  "System failure",
-			Status: http.StatusInternalServerError,
-			Detail: err.Error(),
-			Cause:  "SYSTEM_FAILURE",
-		}
-		logger.DetectorLog.Errorln("Get Request Body error: ", err)
-		gc.JSON(http.StatusInternalServerError, problemDetail)
 		return
 	}
-
-	err = openapi.Deserialize(&authEvent, requestBody, "application/json")
-	if err != nil {
-		problemDetail := "[Request Body] " + err.Error()
-		rsp := models.ProblemDetails{
-			Title:  "Malformed request syntax",
-			Status: http.StatusBadRequest,
-			Detail: problemDetail,
-		}
-		logger.DetectorLog.Errorln(problemDetail)
-		gc.JSON(http.StatusBadRequest, rsp)
+	var authEvent models.Udm_UEAU_AuthEvent
+	if err := s.deserializeData(gc, &authEvent, contentType); err != nil {
 		return
 	}
-
-	supi := gc.Params.ByName("supiOrSuci")
 	logger.DetectorLog.Println("Handle ConfirmAuthDataRequest")
-
-	s.Processor().ConfirmAuthDataProcedure(gc, authEvent, supi)
+	hdlRsp := s.Processor().ConfirmAuthDataProcedure(
+		gc.Request.Context(), authEvent, gc.Param("supiOrSuci"))
+	s.buildAndSendHttpResponse(gc, hdlRsp)
 }

@@ -2,8 +2,10 @@ package context
 
 import (
 	"context"
+	"strings"
 	"sync"
 
+	"github.com/free5gc/openapi"
 	"github.com/free5gc/openapi/models"
 	"github.com/free5gc/openapi/oauth"
 	"github.com/free5gc/scp/internal/logger"
@@ -22,9 +24,10 @@ var _ NFContext = &ScpContext{}
 type ScpContext struct {
 	scp
 
-	nfInstID       string // NF Instance ID
-	OAuth2Required bool
 	mu             sync.RWMutex
+	nfInstID       string
+	oauth2Required bool
+	nfToURI        map[string]string
 
 	AmfUri  string
 	AusfUri string
@@ -38,56 +41,33 @@ type ScpContext struct {
 	UpfUri  string
 }
 
-var (
-	NFtoUriMap map[string]string
-	scpContext ScpContext
-)
-
 func NewContext(scp scp) (*ScpContext, error) {
+	cfg := scp.Config().Configuration
 	c := &ScpContext{
 		scp:      scp,
 		nfInstID: uuid.New().String(),
+		nfToURI:  make(map[string]string),
+		AmfUri:   cfg.AmfUri,
+		AusfUri:  cfg.AusfUri,
+		ChfUri:   cfg.ChfUri,
+		NefUri:   cfg.NefUri,
+		NssfUri:  cfg.NssfUri,
+		PcfUri:   cfg.PcfUri,
+		SmfUri:   cfg.SmfUri,
+		UdmUri:   cfg.UdmUri,
+		UdrUri:   cfg.UdrUri,
+		UpfUri:   cfg.UpfUri,
 	}
-	NFtoUriMap = make(map[string]string)
-	scpContext.AmfUri = scp.Config().Configuration.AmfUri
-	if scpContext.AmfUri != "" {
-		NFtoUriMap["AMF"] = scpContext.AmfUri
-	}
-	scpContext.AusfUri = scp.Config().Configuration.AusfUri
-	if scpContext.AusfUri != "" {
-		NFtoUriMap["AUSF"] = scpContext.AusfUri
-	}
-	scpContext.ChfUri = scp.Config().Configuration.ChfUri
-	if scpContext.ChfUri != "" {
-		NFtoUriMap["CHF"] = scpContext.ChfUri
-	}
-	scpContext.NefUri = scp.Config().Configuration.NefUri
-	if scpContext.NefUri != "" {
-		NFtoUriMap["NEF"] = scpContext.NefUri
-	}
-	scpContext.NssfUri = scp.Config().Configuration.NssfUri
-	if scpContext.NssfUri != "" {
-		NFtoUriMap["NSSF"] = scpContext.NssfUri
-	}
-	scpContext.PcfUri = scp.Config().Configuration.PcfUri
-	if scpContext.PcfUri != "" {
-		NFtoUriMap["PCF"] = scpContext.PcfUri
-	}
-	scpContext.SmfUri = scp.Config().Configuration.SmfUri
-	if scpContext.SmfUri != "" {
-		NFtoUriMap["SMF"] = scpContext.SmfUri
-	}
-	scpContext.UdmUri = scp.Config().Configuration.UdmUri
-	if scpContext.UdmUri != "" {
-		NFtoUriMap["UDM"] = scpContext.UdmUri
-	}
-	scpContext.UdrUri = scp.Config().Configuration.UdrUri
-	if scpContext.UdrUri != "" {
-		NFtoUriMap["UDR"] = scpContext.UdrUri
-	}
-	scpContext.UpfUri = scp.Config().Configuration.UpfUri
-	if scpContext.UpfUri != "" {
-		NFtoUriMap["UPF"] = scpContext.UpfUri
+
+	for nf, uri := range map[string]string{
+		"AMF": c.AmfUri, "AUSF": c.AusfUri, "CHF": c.ChfUri,
+		"NEF": c.NefUri, "NSSF": c.NssfUri, "PCF": c.PcfUri,
+		"SMF": c.SmfUri, "UDM": c.UdmUri, "UDR": c.UdrUri,
+		"UPF": c.UpfUri,
+	} {
+		if uri != "" {
+			c.nfToURI[nf] = uri
+		}
 	}
 
 	logger.CtxLog.Infof("New nfInstID: [%s]", c.nfInstID)
@@ -102,21 +82,44 @@ func (c *ScpContext) NfInstID() string {
 
 func (c *ScpContext) SetNfInstID(id string) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	c.nfInstID = id
-	logger.CtxLog.Infof("Set nfInstID: [%s]", c.nfInstID)
+	c.mu.Unlock()
+	logger.CtxLog.Infof("Set nfInstID: [%s]", id)
 }
 
-func (c *ScpContext) GetTokenCtx(serviceName models.ServiceName, targetNF models.NrfNfManagementNfType) (
-	context.Context, *models.ProblemDetails, error,
-) {
-	if !c.OAuth2Required {
-		return context.TODO(), nil, nil
+func (c *ScpContext) OAuth2Required() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.oauth2Required
+}
+
+func (c *ScpContext) SetOAuth2Required(required bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.oauth2Required = required
+}
+
+func (c *ScpContext) URIForNF(nf string) string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.nfToURI[strings.ToUpper(nf)]
+}
+
+func (c *ScpContext) GetTokenCtx(
+	parent context.Context,
+	serviceName models.Nrf_NFMgmt_ServiceName,
+	targetNF models.Nrf_NFMgmt_NFType,
+) (context.Context, *models.ProblemDetails, error) {
+	if parent == nil {
+		parent = context.Background()
 	}
-	return oauth.GetTokenCtx(models.NrfNfManagementNfType_SCP, targetNF,
-		c.nfInstID, c.Config().NrfUri(), string(serviceName))
-}
-
-func GetSelf() *ScpContext {
-	return &scpContext
+	if !c.OAuth2Required() {
+		return parent, nil, nil
+	}
+	tokenCtx, pd, err := oauth.GetTokenCtx(models.Nrf_NFMgmt_NFType_SCP, targetNF,
+		c.NfInstID(), c.Config().NrfUri(), string(serviceName))
+	if err != nil {
+		return nil, pd, err
+	}
+	return context.WithValue(parent, openapi.ContextOAuth2, tokenCtx.Value(openapi.ContextOAuth2)), nil, nil
 }

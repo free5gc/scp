@@ -1,12 +1,13 @@
 package processor
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/free5gc/openapi/models"
-	"github.com/free5gc/scp/internal/logger"
+	"github.com/free5gc/scp/internal/util"
 	"github.com/free5gc/util/mongoapi"
-	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
 )
 
@@ -23,21 +24,42 @@ const (
 	ConfirmationResourceURI_EAP_SESSION ConfirmationResourceURI = "/eap-session"
 )
 
-// Define every thing you want in this struct,
-// so that you can use them in different message handler
 type AuthProcedureInfo struct {
-	AuthSubsData         models.AuthenticationSubscription
-	ServingNetworkName   string // retrieve from AMF
-	AuthenticationVector models.AuthenticationVector
+	AuthSubsData         models.Udr_DR_AuthenticationSubscription
+	ServingNetworkName   string
+	AuthenticationVector models.Udm_UEAU_AuthenticationVector
 }
 
-func (p *Processor) CreateAuthenticationStatusProcedure(c *gin.Context, collName string, ueId string, putData bson.M) {
-	filter := bson.M{"ueId": ueId}
-	putData["ueId"] = ueId
+type AuthenticationStatusStore interface {
+	Upsert(ctx context.Context, collection, ueID string, data bson.M) error
+}
 
-	if _, err := mongoapi.RestfulAPIPutOne(collName, filter, putData); err != nil {
-		logger.DetectorLog.Errorf("CreateAuthenticationStatusProcedure err: %+v", err)
+type mongoAuthenticationStatusStore struct{}
+
+func (mongoAuthenticationStatusStore) Upsert(
+	_ context.Context,
+	collection, ueID string,
+	data bson.M,
+) error {
+	filter := bson.M{"ueId": ueID}
+	data["ueId"] = ueID
+	_, err := mongoapi.RestfulAPIPutOne(collection, filter, data)
+	return err
+}
+
+func (p *Processor) CreateAuthenticationStatusProcedure(
+	ctx context.Context,
+	ueID string,
+	authEvent models.Udm_UEAU_AuthEvent,
+) *HandlerResponse {
+	const collection = "subscriptionData.authenticationData.authenticationStatus"
+	data := util.ToBsonM(authEvent)
+	if err := p.authenticationStatusStore.Upsert(ctx, collection, ueID, data); err != nil {
+		return response(http.StatusInternalServerError, &models.ProblemDetails{
+			Status: http.StatusInternalServerError,
+			Cause:  "SYSTEM_FAILURE",
+			Detail: fmt.Sprintf("store authentication status: %v", err),
+		})
 	}
-
-	c.Status(http.StatusNoContent)
+	return &HandlerResponse{Status: http.StatusNoContent}
 }

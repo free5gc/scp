@@ -1,17 +1,20 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime/debug"
+	"syscall"
 
 	"github.com/free5gc/scp/internal/logger"
 	scpapp "github.com/free5gc/scp/pkg/app"
 	"github.com/free5gc/scp/pkg/factory"
 	logger_util "github.com/free5gc/util/logger"
 	"github.com/free5gc/util/version"
-	"github.com/urfave/cli"
+	"github.com/urfave/cli/v2"
 )
 
 func main() {
@@ -25,20 +28,24 @@ func main() {
 	app := cli.NewApp()
 	app.Name = "scp"
 	app.Usage = "5G Service Communication Proxy"
+	app.Version = version.GetVersion()
 	app.Action = action
 	app.Flags = []cli.Flag{
-		cli.StringFlag{
-			Name:  "config, c",
-			Usage: "Load configuration from `FILE`",
+		&cli.StringFlag{
+			Name:    "config",
+			Aliases: []string{"c"},
+			Usage:   "Load configuration from `FILE`",
 		},
-		cli.StringSliceFlag{
-			Name:  "log, l",
-			Usage: "Output NF log to `FILE`",
+		&cli.StringSliceFlag{
+			Name:    "log",
+			Aliases: []string{"l"},
+			Usage:   "Output NF log to `FILE`",
 		},
 	}
 
 	if err := app.Run(os.Args); err != nil {
 		logger.MainLog.Errorf("SCP Cli Run err: %v\n", err)
+		os.Exit(1)
 	}
 }
 
@@ -60,8 +67,10 @@ func action(cliCtx *cli.Context) error {
 		return fmt.Errorf("new SCP: %w", err)
 	}
 
-	if err := scp.Run(); err != nil {
-		return nil
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := scp.Run(ctx); err != nil {
+		return fmt.Errorf("run SCP: %w", err)
 	}
 
 	return nil

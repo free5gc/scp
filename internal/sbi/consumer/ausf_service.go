@@ -1,126 +1,117 @@
 package consumer
 
 import (
+	"context"
 	"sync"
 
-	"github.com/free5gc/openapi"
-	"github.com/free5gc/openapi/ausf/UEAuthentication"
+	ausfUEAU "github.com/free5gc/openapi/ausf/UEAU"
 	"github.com/free5gc/openapi/models"
 )
 
 type nausfService struct {
 	consumer *Consumer
-
-	UEAuthenticationMu sync.RWMutex
-
-	UEAuthenticationClients map[string]*UEAuthentication.APIClient
+	mu       sync.RWMutex
+	clients  map[string]*ausfUEAU.APIClient
 }
 
-func (s *nausfService) getUEAuthenticationClient(uri string) *UEAuthentication.APIClient {
+func (s *nausfService) getUEAuthenticationClient(uri string) *ausfUEAU.APIClient {
 	if uri == "" {
 		return nil
 	}
-	s.UEAuthenticationMu.RLock()
-	client, ok := s.UEAuthenticationClients[uri]
-	if ok {
-		s.UEAuthenticationMu.RUnlock()
+	s.mu.RLock()
+	client := s.clients[uri]
+	s.mu.RUnlock()
+	if client != nil {
 		return client
 	}
-
-	configuration := UEAuthentication.NewConfiguration()
-	configuration.SetBasePath(uri)
-	client = UEAuthentication.NewAPIClient(configuration)
-
-	s.UEAuthenticationMu.RUnlock()
-	s.UEAuthenticationMu.Lock()
-	defer s.UEAuthenticationMu.Unlock()
-	s.UEAuthenticationClients[uri] = client
+	cfg := ausfUEAU.NewConfiguration()
+	cfg.SetBasePath(uri)
+	client = ausfUEAU.NewAPIClient(cfg)
+	s.mu.Lock()
+	if existing := s.clients[uri]; existing != nil {
+		client = existing
+	} else {
+		s.clients[uri] = client
+	}
+	s.mu.Unlock()
 	return client
 }
 
-func (s *nausfService) SendUeAuthPostRequest(uri string,
-	authInfo models.AuthenticationInfo,
-) (*models.UeAuthenticationCtx, *models.ProblemDetails, error) {
+func (s *nausfService) SendUeAuthPostRequest(
+	parent context.Context,
+	uri string,
+	authInfo models.Ausf_UEAU_AuthenticationInfo,
+) (*models.Ausf_UEAU_UEAuthenticationCtx, error) {
 	client := s.getUEAuthenticationClient(uri)
-
 	if client == nil {
-		return nil, nil, openapi.ReportError("ausf not found")
+		return nil, nilResponse("AUSF authentication")
 	}
-
-	ctx, _, err := s.consumer.Context().GetTokenCtx(models.ServiceName_NAUSF_AUTH, models.NrfNfManagementNfType_AUSF)
+	ctx, _, err := s.consumer.Context().GetTokenCtx(parent,
+		models.Nrf_NFMgmt_ServiceName_NAUSF_AUTH, models.Nrf_NFMgmt_NFType_AUSF)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-
-	// Let models.AuthenticationInfo convert to *UEAuthentication.UeAuthenticationsPostRequest
-	ueAuthPostReq := &UEAuthentication.UeAuthenticationsPostRequest{
-		AuthenticationInfo: &authInfo,
+	rsp, err := client.DefaultApi.UeAuthenticationsPost(ctx, &ausfUEAU.UeAuthenticationsPostRequest{
+		RequestBody: &authInfo,
+	})
+	if err != nil {
+		return nil, normalizeError(err)
 	}
-
-	ueAuthPostResp, err := client.DefaultApi.UeAuthenticationsPost(ctx, ueAuthPostReq)
-	if err == nil {
-		return &ueAuthPostResp.UeAuthenticationCtx, nil, nil
-	} else if apiError, ok := err.(openapi.GenericOpenAPIError); ok {
-		problem := apiError.Model().(models.ProblemDetails)
-		return nil, &problem, nil
-	} else {
-		return nil, nil, openapi.ReportError("server no response")
+	if rsp == nil || rsp.Ausf_UEAU_UEAuthenticationCtx == nil {
+		return nil, nilResponse("AUSF authentication")
 	}
+	return rsp.Ausf_UEAU_UEAuthenticationCtx, nil
 }
 
-func (s *nausfService) SendAuth5gAkaConfirmRequest(uri string,
-	authCtxId string, confirmationData *models.ConfirmationData,
-) (*models.ConfirmationDataResponse, *models.ProblemDetails, error) {
+func (s *nausfService) SendAuth5gAkaConfirmRequest(
+	parent context.Context,
+	uri, authCtxID string,
+	confirmationData *models.Ausf_UEAU_ConfirmationData,
+) (*models.Ausf_UEAU_ConfirmationDataResponse, error) {
 	client := s.getUEAuthenticationClient(uri)
-
 	if client == nil {
-		return nil, nil, openapi.ReportError("ausf not found")
+		return nil, nilResponse("AUSF 5G AKA confirmation")
 	}
-
-	ctx, _, err := s.consumer.Context().GetTokenCtx(models.ServiceName_NAUSF_AUTH, models.NrfNfManagementNfType_AUSF)
+	ctx, _, err := s.consumer.Context().GetTokenCtx(parent,
+		models.Nrf_NFMgmt_ServiceName_NAUSF_AUTH, models.Nrf_NFMgmt_NFType_AUSF)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-
-	confirmData := &UEAuthentication.UeAuthenticationsAuthCtxId5gAkaConfirmationPutRequest{
-		AuthCtxId:        &authCtxId,
-		ConfirmationData: confirmationData,
+	rsp, err := client.DefaultApi.UeAuthenticationsAuthCtxId5gAkaConfirmationPut(ctx,
+		&ausfUEAU.UeAuthenticationsAuthCtxId5gAkaConfirmationPutRequest{
+			AuthCtxId: &authCtxID, RequestBody: confirmationData,
+		})
+	if err != nil {
+		return nil, normalizeError(err)
 	}
-
-	confirmResultResp, err := client.DefaultApi.UeAuthenticationsAuthCtxId5gAkaConfirmationPut(
-		ctx, confirmData)
-	if err == nil {
-		return &confirmResultResp.ConfirmationDataResponse, nil, nil
-	} else {
-		return nil, nil, openapi.ReportError("server no response")
+	if rsp == nil || rsp.Ausf_UEAU_ConfirmationDataResponse == nil {
+		return nil, nilResponse("AUSF 5G AKA confirmation")
 	}
+	return rsp.Ausf_UEAU_ConfirmationDataResponse, nil
 }
 
-func (s *nausfService) SendEapAuthConfirmRequest(uri string,
-	authCtxId string, eapSessionReq *models.EapSession,
-) (*models.EapSession, *models.ProblemDetails, error) {
+func (s *nausfService) SendEapAuthConfirmRequest(
+	parent context.Context,
+	uri, authCtxID string,
+	eapSession *models.Ausf_UEAU_EapSession,
+) (*models.Ausf_UEAU_EapSession, error) {
 	client := s.getUEAuthenticationClient(uri)
-
 	if client == nil {
-		return nil, nil, openapi.ReportError("ausf not found")
+		return nil, nilResponse("AUSF EAP confirmation")
 	}
-
-	// initial eapAuthMethodReq
-	eapAuthMethodReq := &UEAuthentication.EapAuthMethodRequest{
-		EapSession: eapSessionReq,
-		AuthCtxId:  &authCtxId,
-	}
-
-	ctx, _, err := s.consumer.Context().GetTokenCtx(models.ServiceName_NAUSF_AUTH, models.NrfNfManagementNfType_AUSF)
+	ctx, _, err := s.consumer.Context().GetTokenCtx(parent,
+		models.Nrf_NFMgmt_ServiceName_NAUSF_AUTH, models.Nrf_NFMgmt_NFType_AUSF)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-
-	eapSessionResp, err := client.DefaultApi.EapAuthMethod(
-		ctx, eapAuthMethodReq)
-	if err == nil {
-		return &eapSessionResp.EapSession, nil, nil
-	} else {
-		return nil, nil, openapi.ReportError("server no response")
+	rsp, err := client.DefaultApi.EapAuthMethod(ctx, &ausfUEAU.EapAuthMethodRequest{
+		AuthCtxId: &authCtxID, RequestBody: eapSession,
+	})
+	if err != nil {
+		return nil, normalizeError(err)
 	}
+	if rsp == nil || rsp.Ausf_UEAU_EapSession == nil {
+		return nil, nilResponse("AUSF EAP confirmation")
+	}
+	return rsp.Ausf_UEAU_EapSession, nil
 }
