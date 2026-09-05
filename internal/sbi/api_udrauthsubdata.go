@@ -3,9 +3,7 @@ package sbi
 import (
 	"net/http"
 
-	"github.com/free5gc/openapi"
 	"github.com/free5gc/openapi/models"
-	"github.com/free5gc/scp/internal/logger"
 	"github.com/free5gc/scp/internal/util"
 	"github.com/gin-gonic/gin"
 )
@@ -24,67 +22,56 @@ func (s *Server) getUdrAuthSubsDataEndpoints() []Endpoint {
 		},
 		{
 			Method:  http.MethodPut,
-			Pattern: "/subscription-data/:ueId/:servingPlmnId/provisioned-data/am-data",
+			Pattern: "/subscription-data/:ueId/authentication-data/authentication-status",
 			APIFunc: s.HandleCreateAuthenticationStatus,
 		},
 	}
 }
 
 func (s *Server) apiGetAuthSubsData(gc *gin.Context) {
-	hdlRsp := s.Processor().GetAuthSubsData(gc.Param("ueId"))
+	var supportedFeatures *string
+	if value, present := gc.GetQuery("supported-features"); present {
+		supportedFeatures = &value
+	}
+	hdlRsp := s.Processor().GetAuthSubsData(
+		gc.Request.Context(), gc.Param("ueId"), supportedFeatures)
 
-	s.buildAndSendHttpResponse(gc, hdlRsp, false)
+	s.buildAndSendHttpResponse(gc, hdlRsp)
 }
 
 func (s *Server) apiPatchAuthSubsData(gc *gin.Context) {
-	var patchItemArray []models.PatchItem
-	if err := gc.ShouldBindJSON(&patchItemArray); err != nil {
-		gc.JSON(http.StatusBadRequest, gin.H{"error": "Invalid patchItem JSON", "details": err.Error()})
+	contentType, err := checkContentTypeIsJSON(gc)
+	if err != nil {
 		return
 	}
-	hdlRsp := s.Processor().ModifyAuthentication(gc.Param("ueId"), patchItemArray)
+	var patchItemArray []models.PatchItem
+	if err := s.deserializeData(gc, &patchItemArray, contentType); err != nil {
+		return
+	}
+	var supportedFeatures *string
+	if value, present := gc.GetQuery("supported-features"); present {
+		supportedFeatures = &value
+	}
+	hdlRsp := s.Processor().ModifyAuthentication(
+		gc.Request.Context(), gc.Param("ueId"), patchItemArray, supportedFeatures)
 
-	s.buildAndSendHttpResponse(gc, hdlRsp, false)
+	s.buildAndSendHttpResponse(gc, hdlRsp)
 }
 
 func (s *Server) HandleCreateAuthenticationStatus(gc *gin.Context) {
-	var authEvent models.AuthEvent
-
-	requestBody, err := gc.GetRawData()
+	contentType, err := checkContentTypeIsJSON(gc)
 	if err != nil {
-		problemDetail := models.ProblemDetails{
-			Title:  "System failure",
-			Status: http.StatusInternalServerError,
-			Detail: err.Error(),
-			Cause:  "SYSTEM_FAILURE",
-		}
-		logger.DetectorLog.Errorf("Get Request Body error: %+v", err)
-		gc.JSON(http.StatusInternalServerError, problemDetail)
 		return
 	}
-
-	err = openapi.Deserialize(&authEvent, requestBody, "application/json")
-	if err != nil {
-		problemDetail := "[Request Body] " + err.Error()
-		rsp := models.ProblemDetails{
-			Title:  "Malformed request syntax",
-			Status: http.StatusBadRequest,
-			Detail: problemDetail,
-		}
-		logger.DetectorLog.Errorln(problemDetail)
-		gc.JSON(http.StatusBadRequest, rsp)
+	var authEvent models.Udm_UEAU_AuthEvent
+	if err := s.deserializeData(gc, &authEvent, contentType); err != nil {
 		return
 	}
-
-	logger.DetectorLog.Tracef("Handle CreateAuthenticationStatus")
-
-	putData := util.ToBsonM(authEvent)
-	ueId := gc.Params.ByName("ueId")
-	if ueId == "" {
+	ueID := gc.Param("ueId")
+	if ueID == "" {
 		util.EmptyUeIdProblemJson(gc)
 		return
 	}
-	collName := "subscriptionData.authenticationData.authenticationStatus"
-
-	s.Processor().CreateAuthenticationStatusProcedure(gc, collName, ueId, putData)
+	hdlRsp := s.Processor().CreateAuthenticationStatusProcedure(gc.Request.Context(), ueID, authEvent)
+	s.buildAndSendHttpResponse(gc, hdlRsp)
 }

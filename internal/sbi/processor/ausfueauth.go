@@ -1,57 +1,47 @@
 package processor
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/free5gc/openapi/models"
-	scp_context "github.com/free5gc/scp/internal/context"
 	"github.com/free5gc/scp/internal/logger"
 )
 
 func (p *Processor) PostUeAutentications(
-	authInfo models.AuthenticationInfo,
+	ctx context.Context,
+	authInfo models.Ausf_UEAU_AuthenticationInfo,
 ) *HandlerResponse {
 	logger.ProxyLog.Infof("Forward AUSF UE Authentication Request")
-	scpContext := scp_context.GetSelf()
-	ausfUri := scpContext.AusfUri
-	targetNfUri := ausfUri
-
-	response, problemDetails, err := p.Consumer().SendUeAuthPostRequest(targetNfUri, &authInfo)
-
-	if response != nil {
-		return &HandlerResponse{http.StatusCreated, nil, response}
-	} else if problemDetails != nil {
-		return &HandlerResponse{int(problemDetails.Status), nil, problemDetails}
+	rsp, err := p.Consumer().SendUeAuthPostRequest(ctx, p.Context().AusfUri, authInfo)
+	if err != nil {
+		return responseFromError(err)
 	}
-	logger.DetectorLog.Errorln(err)
-	problemDetails = &models.ProblemDetails{
-		Status: http.StatusForbidden,
-		Cause:  "UNSPECIFIED",
-	}
-
-	return &HandlerResponse{http.StatusForbidden, nil, problemDetails}
+	return response(http.StatusCreated, rsp)
 }
 
 func (p *Processor) PutUeAutenticationsConfirmation(
-	authCtxId string,
-	confirmationData models.ConfirmationData,
+	ctx context.Context,
+	authCtxID string,
+	confirmationData models.Ausf_UEAU_ConfirmationData,
 ) *HandlerResponse {
 	logger.ProxyLog.Infof("Forward AUSF UE Authentication Response")
-	scpContext := scp_context.GetSelf()
-	ausfUri := scpContext.AusfUri
-	targetNfUri := ausfUri
-
-	response, problemDetails, err := p.Consumer().SendAuth5gAkaConfirmRequest(targetNfUri, authCtxId, &confirmationData)
-
-	if response != nil {
-		return &HandlerResponse{http.StatusOK, nil, response}
-	} else if problemDetails != nil {
-		return &HandlerResponse{int(problemDetails.Status), nil, problemDetails}
+	rsp, err := p.Consumer().SendAuth5gAkaConfirmRequest(ctx, p.Context().AusfUri, authCtxID, &confirmationData)
+	if err != nil {
+		return responseFromError(err)
 	}
-	logger.DetectorLog.Errorln(err)
-	problemDetails = &models.ProblemDetails{
-		Status: http.StatusForbidden,
-		Cause:  "UNSPECIFIED",
+	return response(http.StatusOK, rsp)
+}
+
+func (p *Processor) PostEapAuthenticationConfirmation(
+	ctx context.Context,
+	authCtxID string,
+	eapSession models.Ausf_UEAU_EapSession,
+) *HandlerResponse {
+	logger.ProxyLog.Infof("Forward AUSF EAP Authentication Response")
+	rsp, err := p.Consumer().SendEapAuthConfirmRequest(ctx, p.Context().AusfUri, authCtxID, &eapSession)
+	if err != nil {
+		return responseFromError(err)
 	}
-	return &HandlerResponse{http.StatusForbidden, nil, problemDetails}
+	return response(http.StatusOK, rsp)
 }

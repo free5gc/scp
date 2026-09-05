@@ -4,10 +4,8 @@ import (
 	"context"
 	"io"
 	"os"
-	"os/signal"
-	"runtime/debug"
 	"sync"
-	"syscall"
+	"time"
 
 	scp_context "github.com/free5gc/scp/internal/context"
 	"github.com/free5gc/scp/internal/logger"
@@ -19,9 +17,10 @@ import (
 )
 
 type ScpApp struct {
-	ctx context.Context
-	wg  sync.WaitGroup
-	cfg *factory.Config
+	ctx    context.Context
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
+	cfg    *factory.Config
 
 	scpCtx    *scp_context.ScpContext
 	consumer  *consumer.Consumer
@@ -113,68 +112,46 @@ func (a *ScpApp) SetReportCaller(reportCaller bool) {
 	logger.Log.SetReportCaller(reportCaller)
 }
 
-func (a *ScpApp) Run() error {
-	var cancel context.CancelFunc
-	a.ctx, cancel = context.WithCancel(context.Background())
-	defer cancel()
-
-	a.wg.Add(1)
-	/* Go Routine is spawned here for listening for cancellation event on
-	 * context */
-	go a.listenShutdownEvent()
-
+func (a *ScpApp) Run(parent context.Context) error {
+	if parent == nil {
+		parent = context.Background()
+	}
+	a.ctx, a.cancel = context.WithCancel(parent)
+	defer a.cancel()
 	if err := a.sbiServer.Run(&a.wg); err != nil {
 		return err
 	}
-
-	if err := a.consumer.RegisterNFInstance(); err != nil {
+	if err := a.consumer.RegisterNFInstance(a.ctx); err != nil {
+		a.sbiServer.Stop()
+		a.wg.Wait()
 		return err
 	}
-
-	// Wait for interrupt signal to gracefully shutdown UPF
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-	<-sigCh
-
-	// Receive the interrupt signal
+	<-a.ctx.Done()
 	logger.MainLog.Infof("Shutdown SCP ...")
-	// Notify each goroutine and wait them stopped
-	cancel()
-	a.WaitRoutineStopped()
+	a.sbiServer.Stop()
+	a.wg.Wait()
+	terminateCtx, terminateCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer terminateCancel()
+	a.Terminate(terminateCtx)
 	logger.MainLog.Infof("SCP exited")
 	return nil
 }
 
-func (a *ScpApp) listenShutdownEvent() {
-	defer func() {
-		if p := recover(); p != nil {
-			// Print stack for panic to log. Fatalf() will let program exit.
-			logger.InitLog.Fatalf("panic: %v\n%s", p, string(debug.Stack()))
-		}
-
-		a.wg.Done()
-	}()
-
-	<-a.ctx.Done()
-	a.sbiServer.Stop()
-}
-
 func (a *ScpApp) WaitRoutineStopped() {
 	a.wg.Wait()
-	a.Terminate()
 }
 
-func (a *ScpApp) Start() {
-	if err := a.Run(); err != nil {
+func (a *ScpApp) Start(ctx context.Context) {
+	if err := a.Run(ctx); err != nil {
 		logger.MainLog.Errorf("SCP Run err: %v", err)
 	}
 }
 
-func (a *ScpApp) Terminate() {
+func (a *ScpApp) Terminate(ctx context.Context) {
 	logger.MainLog.Infof("Terminating SCP...")
 
 	// deregister with NRF
-	if err := a.consumer.DeregisterNFInstance(); err != nil {
+	if err := a.consumer.DeregisterNFInstance(ctx); err != nil {
 		logger.MainLog.Error(err)
 	} else {
 		logger.MainLog.Infof("Deregister from NRF successfully")

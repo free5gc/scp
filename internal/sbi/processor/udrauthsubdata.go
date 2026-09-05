@@ -1,58 +1,62 @@
 package processor
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/free5gc/openapi/models"
-	scp_context "github.com/free5gc/scp/internal/context"
+	udmSDM "github.com/free5gc/openapi/udm/SDM"
 	"github.com/free5gc/scp/internal/logger"
 )
 
 func (p *Processor) GetAuthSubsData(
-	ueId string,
+	ctx context.Context, ueID string, supportedFeatures *string,
 ) *HandlerResponse {
 	logger.DetectorLog.Infof("Forward UDM QueryAuthSubsData")
-
-	scpContext := scp_context.GetSelf()
-	udrUri := scpContext.UdrUri
-	targetNfUri := udrUri
-
-	response, problemDetails, err := p.Consumer().SendAuthSubsDataGet(targetNfUri, ueId)
-
-	if response != nil {
-		return &HandlerResponse{http.StatusOK, nil, response}
-	} else if problemDetails != nil {
-		return &HandlerResponse{int(problemDetails.Status), nil, problemDetails}
+	rsp, err := p.Consumer().SendAuthSubsDataGet(ctx, p.Context().UdrUri, ueID, supportedFeatures)
+	if err != nil {
+		return responseFromError(err)
 	}
-	logger.DetectorLog.Errorln(err)
-	problemDetails = &models.ProblemDetails{
-		Status: http.StatusForbidden,
-		Cause:  "UNSPECIFIED",
-	}
-
-	return &HandlerResponse{http.StatusForbidden, nil, problemDetails}
+	return response(http.StatusOK, rsp)
 }
 
 func (p *Processor) ModifyAuthentication(
-	ueId string, patchItemArray []models.PatchItem,
+	ctx context.Context,
+	ueID string,
+	patches []models.PatchItem,
+	supportedFeatures *string,
 ) *HandlerResponse {
 	logger.DetectorLog.Infof("Forward UDM ModifyAuthentication")
-
-	scpContext := scp_context.GetSelf()
-	udrUri := scpContext.UdrUri
-	targetNfUri := udrUri
-
-	problemDetails, err := p.Consumer().ModifyAuthenticationPatch(targetNfUri, ueId, patchItemArray)
-	if problemDetails != nil {
-		return &HandlerResponse{int(problemDetails.Status), nil, problemDetails}
-	} else if err == nil {
-		return &HandlerResponse{http.StatusNoContent, nil, nil}
+	if err := p.Consumer().ModifyAuthenticationPatch(
+		ctx, p.Context().UdrUri, ueID, patches, supportedFeatures,
+	); err != nil {
+		return responseFromError(err)
 	}
+	return &HandlerResponse{Status: http.StatusNoContent}
+}
 
-	problemDetails = &models.ProblemDetails{
-		Status: http.StatusForbidden,
-		Cause:  "UNSPECIFIED",
+func (p *Processor) GetNSSAI(
+	ctx context.Context,
+	request *udmSDM.GetNSSAIRequest,
+) *HandlerResponse {
+	rsp, err := p.Consumer().SendGetNSSAIRequest(ctx, p.Context().UdmUri, request)
+	if err != nil {
+		return responseFromError(err)
 	}
-
-	return &HandlerResponse{http.StatusForbidden, nil, problemDetails}
+	headers := make(map[string][]string)
+	if rsp.Cache_Control != "" {
+		headers["Cache-Control"] = []string{rsp.Cache_Control}
+	}
+	if rsp.ETag != "" {
+		headers["ETag"] = []string{rsp.ETag}
+	}
+	if rsp.Last_Modified != "" {
+		headers["Last-Modified"] = []string{rsp.Last_Modified}
+	}
+	if rsp.Udm_SDM_Nssai == nil {
+		return &HandlerResponse{Status: http.StatusNotModified, Headers: headers}
+	}
+	return &HandlerResponse{
+		Status: http.StatusOK, Headers: headers, ContentType: "application/json", Body: rsp.Udm_SDM_Nssai,
+	}
 }
