@@ -2,103 +2,53 @@ package sbi
 
 import (
 	"encoding/json"
-	"fmt"
-	"io"
 	"net/http"
-	"net/url"
+	"strconv"
 
-	"github.com/free5gc/openapi/models"
-	scp_context "github.com/free5gc/scp/internal/context"
-	"github.com/free5gc/scp/internal/logger"
-	"github.com/free5gc/scp/pkg/factory"
+	"github.com/free5gc/openapi"
+	udmSDM "github.com/free5gc/openapi/udm/SDM"
 	"github.com/gin-gonic/gin"
 )
 
 func (s *Server) getUdmSubManageEndpoints() []Endpoint {
-	return []Endpoint{
-		{
-			Method:  http.MethodGet,
-			Pattern: "/:supiOrSuci/nssai",
-			APIFunc: s.HandleGetNssai,
-		},
-	}
+	return []Endpoint{{
+		Method: http.MethodGet, Pattern: "/:supiOrSuci/nssai", APIFunc: s.HandleGetNssai,
+	}}
 }
 
 func (s *Server) HandleGetNssai(gc *gin.Context) {
-	UdmUri := scp_context.GetSelf().UdmUri
-	logger.DetectorLog.Println("Handle Get Nssai Received, but not support detection, forward to UDM: ", UdmUri)
 	supi := gc.Param("supiOrSuci")
-	// logger.DetectorLog.Println("supi", supi)
 	if supi == "" {
-		gc.JSON(http.StatusBadRequest, gin.H{"error": "Missing SUPI in the request path"})
+		sendProblem(gc, http.StatusBadRequest, openapi.ProblemDetailsMalformedReqSyntax("missing SUPI"))
 		return
 	}
-	plmnId := gc.Query("plmn-id")
-	if plmnId == "" {
-		gc.JSON(http.StatusBadRequest, gin.H{"error": "Missing plmn-id in query parameters"})
-		return
-	}
-	decodedPlmnId, err := url.QueryUnescape(plmnId)
-	if err != nil {
-		logger.DetectorLog.Warnln("Failed to decode plmn-id: ", err)
-		gc.JSON(http.StatusBadRequest, gin.H{"error": "Invalid plmn-id format"})
-		return
-	}
-	plmnIdStruct := &models.PlmnId{}
-	err = json.Unmarshal([]byte(decodedPlmnId), plmnIdStruct)
-	if err != nil {
-		logger.DetectorLog.Warnln("Failed to parse plmn-id as JSON: ", err)
-		gc.JSON(http.StatusBadRequest, gin.H{"error": "Invalid plmn-id JSON format"})
-		return
-	}
-	plmnIdJson, err := json.Marshal(plmnIdStruct)
-	if err != nil {
-		logger.DetectorLog.Warnln("Failed to encode plmn-id back to JSON: ", err)
-		gc.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error while processing plmn-id"})
-		return
-	}
-
-	forwardURL := fmt.Sprintf(
-		"%s%s/%s/nssai?plmnId=%s",
-		UdmUri,
-		factory.NudmSubManageUriPrefix,
-		supi,
-		url.QueryEscape(string(plmnIdJson)),
-	)
-
-	req, err := http.NewRequestWithContext(gc.Request.Context(), http.MethodGet, forwardURL, nil)
-	if err != nil {
-		gc.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create forward request"})
-		return
-	}
-
-	for key, values := range gc.Request.Header {
-		for _, value := range values {
-			req.Header.Add(key, value)
+	request := &udmSDM.GetNSSAIRequest{Supi: &supi}
+	if value, present := gc.GetQuery("plmn-id"); present {
+		if value == "" || json.Unmarshal([]byte(value), &request.PlmnId) != nil || request.PlmnId == nil {
+			sendProblem(gc, http.StatusBadRequest,
+				openapi.ProblemDetailsMalformedReqSyntax("invalid plmn-id query parameter"))
+			return
 		}
 	}
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		gc.JSON(http.StatusBadGateway, gin.H{"error": "Failed to forward request to UDM"})
-		return
+	if value, present := gc.GetQuery("supported-features"); present {
+		request.SupportedFeatures = &value
 	}
-
-	defer func() {
-		if err = resp.Body.Close(); err != nil {
-			logger.DetectorLog.Warnln("Failed to close response body:", err)
+	if value, present := gc.GetQuery("disaster-roaming-ind"); present {
+		parsed, err := strconv.ParseBool(value)
+		if err != nil {
+			sendProblem(gc, http.StatusBadRequest,
+				openapi.ProblemDetailsMalformedReqSyntax("invalid disaster-roaming-ind query parameter"))
+			return
 		}
-	}()
+		request.DisasterRoamingInd = &parsed
+	}
+	if value := gc.GetHeader("If-None-Match"); value != "" {
+		request.IfNoneMatch = &value
+	}
+	if value := gc.GetHeader("If-Modified-Since"); value != "" {
+		request.IfModifiedSince = &value
+	}
 
-	gc.Status(resp.StatusCode)
-	for key, values := range resp.Header {
-		for _, value := range values {
-			gc.Writer.Header().Add(key, value)
-		}
-	}
-	_, err = io.Copy(gc.Writer, resp.Body)
-	if err != nil {
-		gc.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to write response"})
-	}
+	hdlRsp := s.Processor().GetNSSAI(gc.Request.Context(), request)
+	s.buildAndSendHttpResponse(gc, hdlRsp)
 }

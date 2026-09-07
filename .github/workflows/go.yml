@@ -2,27 +2,35 @@ name: Go
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
-    branches: [main]
+    branches: [master]
 
 jobs:
   build:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go: ["1.18", "1.21"]
+        go: ["1.26.2"]
     name: Go ${{ matrix.go }} sample
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v6
 
       - name: Set up Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go }}
 
-      - name: Build
-        run: go build -v ./...
+      - name: Verify modules
+        run: |
+          go mod verify
+          go mod tidy -diff
 
-      - name: Test
-        run: go test -v ./...
+      - name: Test with race detector
+        run: go test -race -cover ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build
+        run: CGO_ENABLED=0 go build ./...
