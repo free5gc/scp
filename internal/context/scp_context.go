@@ -116,13 +116,13 @@ func (c *ScpContext) GetTokenCtx(
 	if !c.OAuth2Required() {
 		return parent, nil, nil
 	}
-	tokenCtx, pd, err := oauth.GetTokenCtx(
-		models.Nrf_NFMgmt_NFType_SCP,
-		targetNF,
-		c.NfInstID(),
-		c.Config().NrfUri(),
-		string(serviceName),
-	)
+	tokenCtx, pd, err := oauth.GetTokenCtx(oauth.TokenRequest{
+		ConsumerNFType:       models.Nrf_NFMgmt_NFType_SCP,
+		ConsumerNFInstanceID: c.NfInstID(),
+		TargetNFType:         targetNF,
+		NRFURI:               c.Config().NrfUri(),
+		Scope:                string(serviceName),
+	})
 	if err != nil {
 		return nil, pd, err
 	}
