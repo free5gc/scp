@@ -78,4 +78,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/free5gc/openapi => github.com/carlhus/openapi v0.0.0-20260831123630-67c603f8c589
+replace github.com/free5gc/openapi => github.com/carlhus/openapi v0.0.0-20260909083244-4564e2d259ad

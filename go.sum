@@ -6,8 +6,8 @@ github.com/bytedance/sonic v1.15.0 h1:/PXeWFaR5ElNcVE84U0dOHjiMHQOwNIx3K4ymzh/uS
 github.com/bytedance/sonic v1.15.0/go.mod h1:tFkWrPz0/CUCLEF4ri4UkHekCIcdnkqXw9VduqpJh0k=
 github.com/bytedance/sonic/loader v0.5.0 h1:gXH3KVnatgY7loH5/TkeVyXPfESoqSBSBEiDd5VjlgE=
 github.com/bytedance/sonic/loader v0.5.0/go.mod h1:AR4NYCk5DdzZizZ5djGqQ92eEhCCcdf5x77udYiSJRo=
-github.com/carlhus/openapi v0.0.0-20260831123630-67c603f8c589 h1:P9g2fairdJ9HAlbPe+2PgIuudLcvCaONK3aQAunHDYU=
-github.com/carlhus/openapi v0.0.0-20260831123630-67c603f8c589/go.mod h1:ixcBUsgwkQBAT/4peVVB0daqxk0qv6V8zOMSFvhKVfo=
+github.com/carlhus/openapi v0.0.0-20260909083244-4564e2d259ad h1:BHlsyqEVommfkyck6dEhLYGxF1DFmOYN1Rj0L6+kRfg=
+github.com/carlhus/openapi v0.0.0-20260909083244-4564e2d259ad/go.mod h1:ixcBUsgwkQBAT/4peVVB0daqxk0qv6V8zOMSFvhKVfo=
 github.com/cloudwego/base64x v0.1.6 h1:t11wG9AECkCDk5fMSoxmufanudBtJ+/HemLstXDLI2M=
 github.com/cloudwego/base64x v0.1.6/go.mod h1:OFcloc187FXDaYHvrNIjxSe8ncn0OOM8gEHfghB2IPU=
 github.com/cpuguy83/go-md2man/v2 v2.0.7 h1:zbFlGlXEAKlwXpmvle3d8Oe3YnkKIK4xSRTd3sHPnBo=
