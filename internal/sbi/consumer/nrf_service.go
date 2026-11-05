@@ -9,10 +9,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/free5gc/openapi"
 	"github.com/free5gc/openapi/models"
 	nrfNFDisc "github.com/free5gc/openapi/nrf/NFDisc"
 	nrfNFMgmt "github.com/free5gc/openapi/nrf/NFMgmt"
 	"github.com/free5gc/scp/internal/logger"
+	"github.com/free5gc/util/nfheartbeat"
 )
 
 const RetryRegisterNrfDuration = 2 * time.Second
@@ -61,6 +63,12 @@ type nnrfService struct {
 	nfDiscClients   map[string]*nrfNFDisc.APIClient
 	nfMngmntMu      sync.RWMutex
 	nfMngmntClients map[string]*nrfNFMgmt.APIClient
+
+	heartbeat *nfheartbeat.Runner
+
+	// Interval in seconds from the last registration response. Written before the heartbeat starts, then only on
+	// the heartbeat goroutine.
+	heartbeatTimer int32
 }
 
 func (s *nnrfService) getNFDiscoveryClient(uri string) *nrfNFDisc.APIClient {
@@ -118,8 +126,10 @@ func (s *nnrfService) RegisterNFInstance(ctx context.Context) error {
 			if rsp == nil {
 				return nilResponse("NRF registration")
 			}
+			s.heartbeatTimer = 0
 			if rsp.Nrf_NFMgmt_NFProfile != nil {
 				nfProfile = rsp.Nrf_NFMgmt_NFProfile
+				s.heartbeatTimer = nfProfile.HeartBeatTimer
 			}
 			if rsp.Location != "" {
 				resourceURI, parseErr := url.Parse(rsp.Location)
@@ -203,6 +213,38 @@ func (s *nnrfService) DeregisterNFInstance(parent context.Context) error {
 	_, err = client.NFInstanceIDDocumentApi.DeregisterNFInstance(ctx,
 		&nrfNFMgmt.DeregisterNFInstanceRequest{NfInstanceID: &instanceID})
 	return normalizeError(err)
+}
+
+// SendUpdateNFInstance sends an NFUpdate PATCH to the NRF, honoring ctx. Unlike the other NRF calls the raw err comes
+// back, alongside any ProblemDetails, so callers can read its GenericOpenAPIError status.
+func (s *nnrfService) SendUpdateNFInstance(ctx context.Context, patchItems []models.PatchItem) (
+	nf models.Nrf_NFMgmt_NFProfile, problemDetails *models.ProblemDetails, err error,
+) {
+	tokenCtx, pd, err := s.consumer.Context().GetTokenCtx(ctx,
+		models.Nrf_NFMgmt_ServiceName_NNRF_NFM, models.Nrf_NFMgmt_NFType_NRF)
+	if err != nil {
+		return nf, pd, err
+	}
+	client := s.getNFManagementClient(s.consumer.Config().NrfUri())
+	instanceID := s.consumer.Context().NfInstID()
+	rsp, err := client.NFInstanceIDDocumentApi.UpdateNFInstance(tokenCtx,
+		&nrfNFMgmt.UpdateNFInstanceRequest{NfInstanceID: &instanceID, RequestBody: patchItems})
+	if err != nil {
+		var apiErr openapi.GenericOpenAPIError
+		if errors.As(err, &apiErr) {
+			if updateErr, ok := apiErr.Model().(nrfNFMgmt.UpdateNFInstanceError); ok {
+				return nf, updateErr.ProblemDetails, err
+			}
+		}
+		return nf, nil, err
+	}
+	if rsp == nil {
+		return nf, nil, nilResponse("NRF NFUpdate")
+	}
+	if rsp.Nrf_NFMgmt_NFProfile != nil {
+		nf = *rsp.Nrf_NFMgmt_NFProfile
+	}
+	return nf, nil, nil
 }
 
 func (s *nnrfService) SearchNFInstances(

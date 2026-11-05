@@ -8,7 +8,9 @@ import (
 	udmUEAU "github.com/free5gc/openapi/udm/UEAU"
 	udrDR "github.com/free5gc/openapi/udr/DR"
 	scp_context "github.com/free5gc/scp/internal/context"
+	"github.com/free5gc/scp/internal/logger"
 	"github.com/free5gc/scp/pkg/factory"
+	"github.com/free5gc/util/nfheartbeat"
 )
 
 type scp interface {
@@ -32,6 +34,15 @@ func NewConsumer(scp scp) (*Consumer, error) {
 		nfDiscClients:   make(map[string]*nrfNFDisc.APIClient),
 		nfMngmntClients: make(map[string]*nrfNFMgmt.APIClient),
 	}
+	heartbeat, err := nfheartbeat.NewRunner(
+		nrfRegistrar{c.nnrfService},
+		func() int32 { return c.Config().GetNfHeartBeatTimer() },
+		logger.ConsumerLog,
+	)
+	if err != nil {
+		return nil, err
+	}
+	c.heartbeat = heartbeat
 	c.nudrService = &nudrService{consumer: c, clients: make(map[string]*udrDR.APIClient)}
 	c.nausfService = &nausfService{consumer: c, clients: make(map[string]*ausfUEAU.APIClient)}
 	c.nudmService = &nudmService{

@@ -132,6 +132,8 @@ func (a *ScpApp) Run(parent context.Context) error {
 		a.wg.Wait()
 		return err
 	}
+	// Only a registered profile has something to keep alive. a.wg then also waits for the heartbeat goroutine.
+	a.consumer.StartHeartbeat(a.ctx, &a.wg)
 	<-a.ctx.Done()
 	logger.MainLog.Infof("Shutdown SCP ...")
 	a.sbiServer.Stop()
@@ -155,6 +157,9 @@ func (a *ScpApp) Start(ctx context.Context) {
 
 func (a *ScpApp) Terminate(ctx context.Context) {
 	logger.MainLog.Infof("Terminating SCP...")
+
+	// no heartbeat PATCH or re-registration PUT may land after the deregistration
+	a.consumer.WaitHeartbeatStopped()
 
 	// deregister with NRF
 	if err := a.consumer.DeregisterNFInstance(ctx); err != nil {

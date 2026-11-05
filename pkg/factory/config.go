@@ -12,6 +12,7 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/free5gc/openapi/models"
 	"github.com/free5gc/scp/internal/logger"
+	"github.com/free5gc/util/nfheartbeat"
 )
 
 const (
@@ -97,6 +98,9 @@ type Configuration struct {
 	UdmUri          string         `yaml:"udmUri,omitempty" valid:"required"`
 	UdrUri          string         `yaml:"udrUri,omitempty" valid:"required"`
 	UpfUri          string         `yaml:"upfUri,omitempty" valid:"required"`
+	// NfHeartBeatTimer is the fallback heartbeat interval in seconds, from 1 to
+	// 3600 as the NRF accepts. The interval the NRF assigns always wins.
+	NfHeartBeatTimer int32 `yaml:"nfHeartBeatTimer,omitempty" valid:"optional,range(1|3600)"`
 }
 
 type Logger struct {
@@ -464,4 +468,14 @@ func (c *Config) GetTLSVerify() bool {
 	defer c.RUnlock()
 	return c.Configuration != nil && c.Configuration.Sbi != nil &&
 		c.Configuration.Sbi.Tls != nil && c.Configuration.Sbi.Tls.Verify
+}
+
+// GetNfHeartBeatTimer returns the fallback heartbeat interval in seconds.
+func (c *Config) GetNfHeartBeatTimer() int32 {
+	c.RLock()
+	defer c.RUnlock()
+	if c.Configuration == nil || c.Configuration.NfHeartBeatTimer <= 0 {
+		return nfheartbeat.DefaultTimer
+	}
+	return c.Configuration.NfHeartBeatTimer
 }
