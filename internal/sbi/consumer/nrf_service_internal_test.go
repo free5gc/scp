@@ -19,8 +19,10 @@ import (
 func TestBuildNfProfileAllowedNfTypes(t *testing.T) {
 	c := newNrfTestConsumer(t)
 	c.Config().Configuration.ServiceList = []factory.Service{
-		{ServiceName: factory.ServiceNausfAuth}, {ServiceName: factory.ServiceNudmUeau},
-		{ServiceName: factory.ServiceNudmSubManage}, {ServiceName: factory.ServiceNudrDR},
+		{ServiceName: factory.ServiceNausfAuth},
+		{ServiceName: factory.ServiceNudmUeau},
+		{ServiceName: factory.ServiceNudmSubManage},
+		{ServiceName: factory.ServiceNudrDR},
 	}
 	profile, err := c.buildNfProfile()
 	if err != nil {

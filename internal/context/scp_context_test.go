@@ -84,6 +84,7 @@ func TestGetTokenCtxOAuthDisabled(t *testing.T) {
 		t.Fatal("disabled OAuth lost parent cancellation")
 	}
 
+	//nolint:staticcheck // Exercise GetTokenCtx's explicit nil-parent fallback.
 	ctx, pd, err = c.GetTokenCtx(nil, models.Nrf_NFMgmt_ServiceName_NNRF_DISC, models.Nrf_NFMgmt_NFType_NRF)
 	if err != nil || pd != nil || ctx == nil || ctx.Err() != nil {
 		t.Fatalf("nil parent must use a background context: pd=%+v err=%v", pd, err)
@@ -98,16 +99,26 @@ func TestGetTokenCtxOAuthEnabled(t *testing.T) {
 		nilParent bool
 		nrfHelper bool
 	}{
-		{name: "NRF discovery", service: models.Nrf_NFMgmt_ServiceName_NNRF_DISC,
-			target: models.Nrf_NFMgmt_NFType_NRF, nrfHelper: true},
-		{name: "NRF management helper", service: models.Nrf_NFMgmt_ServiceName_NNRF_NFM,
-			target: models.Nrf_NFMgmt_NFType_NRF, nrfHelper: true},
-		{name: "explicit type-level NRF request", service: models.Nrf_NFMgmt_ServiceName_NNRF_DISC,
-			target: models.Nrf_NFMgmt_NFType_NRF},
-		{name: "AUSF authentication", service: models.Nrf_NFMgmt_ServiceName_NAUSF_AUTH,
-			target: models.Nrf_NFMgmt_NFType_AUSF},
-		{name: "UDR request with nil parent", service: models.Nrf_NFMgmt_ServiceName_NUDR_DR,
-			target: models.Nrf_NFMgmt_NFType_UDR, nilParent: true},
+		{
+			name: "NRF discovery", service: models.Nrf_NFMgmt_ServiceName_NNRF_DISC,
+			target: models.Nrf_NFMgmt_NFType_NRF, nrfHelper: true,
+		},
+		{
+			name: "NRF management helper", service: models.Nrf_NFMgmt_ServiceName_NNRF_NFM,
+			target: models.Nrf_NFMgmt_NFType_NRF, nrfHelper: true,
+		},
+		{
+			name: "explicit type-level NRF request", service: models.Nrf_NFMgmt_ServiceName_NNRF_DISC,
+			target: models.Nrf_NFMgmt_NFType_NRF,
+		},
+		{
+			name: "AUSF authentication", service: models.Nrf_NFMgmt_ServiceName_NAUSF_AUTH,
+			target: models.Nrf_NFMgmt_NFType_AUSF,
+		},
+		{
+			name: "UDR request with nil parent", service: models.Nrf_NFMgmt_ServiceName_NUDR_DR,
+			target: models.Nrf_NFMgmt_NFType_UDR, nilParent: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -159,7 +170,7 @@ func TestGetTokenCtxOAuthEnabled(t *testing.T) {
 			type contextKey struct{}
 			parent, cancel := context.WithTimeout(context.WithValue(t.Context(), contextKey{}, "request"), time.Minute)
 			defer cancel()
-			var requestCtx context.Context = parent
+			requestCtx := parent
 			if tt.nilParent {
 				requestCtx = nil
 			}

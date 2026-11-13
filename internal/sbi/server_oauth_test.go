@@ -69,8 +69,10 @@ func newProxyFixture(t *testing.T) *proxyFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cert := &x509.Certificate{SerialNumber: big.NewInt(1), URIs: []*url.URL{identity},
-		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour)}
+	cert := &x509.Certificate{
+		SerialNumber: big.NewInt(1), URIs: []*url.URL{identity},
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour),
+	}
 	der, err := x509.CreateCertificate(rand.Reader, cert, cert, &f.key.PublicKey, f.key)
 	if err != nil {
 		t.Fatal(err)
@@ -136,8 +138,10 @@ func newProxyFixture(t *testing.T) *proxyFixture {
 		claimsMap := f.claims()
 		claimsMap["sub"], claimsMap["aud"] = subject, audience
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(map[string]any{"access_token": f.sign(t, claimsMap, f.key),
-			"token_type": "Bearer", "expires_in": 300}); err != nil {
+		if err := json.NewEncoder(w).Encode(map[string]any{
+			"access_token": f.sign(t, claimsMap, f.key),
+			"token_type":   "Bearer", "expires_in": 300,
+		}); err != nil {
 			t.Error(err)
 		}
 	}))
@@ -150,9 +154,12 @@ func newProxyFixture(t *testing.T) *proxyFixture {
 		Sbi:    &factory.Sbi{Scheme: "http", RegisterIPv4: "127.0.0.113", BindingIPv4: "127.0.0.113", Port: 8000},
 		NrfUri: nrf.URL, NrfCertPem: certPath, DelegatedOAuth: true,
 		AusfUri: producer.URL, UdmUri: producer.URL, UdrUri: producer.URL,
-		ServiceList: []factory.Service{{ServiceName: factory.ServiceNausfAuth},
-			{ServiceName: factory.ServiceNudmUeau}, {ServiceName: factory.ServiceNudmSubManage},
-			{ServiceName: factory.ServiceNudrDR}},
+		ServiceList: []factory.Service{
+			{ServiceName: factory.ServiceNausfAuth},
+			{ServiceName: factory.ServiceNudmUeau},
+			{ServiceName: factory.ServiceNudmSubManage},
+			{ServiceName: factory.ServiceNudrDR},
+		},
 	}}}
 	app.ctx, err = scp_context.NewContext(app)
 	if err != nil {
@@ -169,8 +176,10 @@ func newProxyFixture(t *testing.T) *proxyFixture {
 }
 
 func (f *proxyFixture) claims() jwt.MapClaims {
-	return jwt.MapClaims{"iss": f.issuer, "sub": f.consumerID, "aud": "AUSF",
-		"exp": time.Now().Add(time.Minute).Unix(), "scope": "nausf-auth"}
+	return jwt.MapClaims{
+		"iss": f.issuer, "sub": f.consumerID, "aud": "AUSF",
+		"exp": time.Now().Add(time.Minute).Unix(), "scope": "nausf-auth",
+	}
 }
 
 func (f *proxyFixture) sign(t *testing.T, claims jwt.MapClaims, key *rsa.PrivateKey) string {
@@ -185,8 +194,10 @@ func (f *proxyFixture) sign(t *testing.T, claims jwt.MapClaims, key *rsa.Private
 func (f *proxyFixture) assertion(t *testing.T, consumerID string) string {
 	t.Helper()
 	// TS 33.501 §13.4.1.3.2: the original consumer CCA addresses NRF and the producer NF type.
-	return f.sign(t, jwt.MapClaims{"sub": consumerID, "aud": []string{"NRF", "AUSF"},
-		"exp": time.Now().Add(time.Minute).Unix()}, f.consumerKey)
+	return f.sign(t, jwt.MapClaims{
+		"sub": consumerID, "aud": []string{"NRF", "AUSF"},
+		"exp": time.Now().Add(time.Minute).Unix(),
+	}, f.consumerKey)
 }
 
 func (f *proxyFixture) request(t *testing.T, headers map[string]string) *httptest.ResponseRecorder {
@@ -217,8 +228,10 @@ func TestProxyJWTValidation(t *testing.T) {
 		{name: "valid producer type", status: 204},
 		{name: "wrong issuer", change: func(c jwt.MapClaims) { c["iss"] = uuid.NewString() }, status: 401},
 		{name: "wrong audience", change: func(c jwt.MapClaims) { c["aud"] = "SMF" }, status: 401},
-		{name: "SCP is not producer audience",
-			change: func(c jwt.MapClaims) { c["aud"] = f.server.Context().NfInstID() }, status: 401},
+		{
+			name:   "SCP is not producer audience",
+			change: func(c jwt.MapClaims) { c["aud"] = f.server.Context().NfInstID() }, status: 401,
+		},
 		{name: "expired", change: func(c jwt.MapClaims) { c["exp"] = time.Now().Add(-time.Minute).Unix() }, status: 401},
 		{name: "missing expiration", change: func(c jwt.MapClaims) { delete(c, "exp") }, status: 401},
 		{name: "wrong scope", change: func(c jwt.MapClaims) { c["scope"] = "nudm-ueau" }, status: 403},
@@ -264,8 +277,10 @@ func TestDelegatedTokenPreservesConsumer(t *testing.T) {
 	f := newProxyFixture(t)
 	for _, consumerID := range []string{f.consumerID, uuid.NewString()} {
 		cca := f.assertion(t, consumerID)
-		w := f.request(t, map[string]string{consumerIDHeader: consumerID, consumerTypeHeader: "AMF",
-			accessScopeHeader: "nausf-auth", ccaHeader: cca})
+		w := f.request(t, map[string]string{
+			consumerIDHeader: consumerID, consumerTypeHeader: "AMF",
+			accessScopeHeader: "nausf-auth", ccaHeader: cca,
+		})
 		if w.Code != 204 {
 			t.Fatalf("status=%d body=%s", w.Code, w.Body)
 		}
@@ -292,8 +307,10 @@ func TestProxyDelegationFailures(t *testing.T) {
 	f := newProxyFixture(t)
 	cca := f.assertion(t, f.consumerID)
 	valid := func() map[string]string {
-		return map[string]string{consumerIDHeader: f.consumerID, consumerTypeHeader: "AMF",
-			accessScopeHeader: "nausf-auth", ccaHeader: cca}
+		return map[string]string{
+			consumerIDHeader: f.consumerID, consumerTypeHeader: "AMF",
+			accessScopeHeader: "nausf-auth", ccaHeader: cca,
+		}
 	}
 	for _, name := range []string{consumerIDHeader, consumerTypeHeader, accessScopeHeader} {
 		headers := valid()
@@ -349,8 +366,10 @@ func TestProxyInstanceAudience(t *testing.T) {
 		t.Fatalf("wrong instance audience accepted: %d", w.Code)
 	}
 	cca := f.assertion(t, f.consumerID)
-	w = f.request(t, map[string]string{consumerIDHeader: f.consumerID, consumerTypeHeader: "AMF",
-		accessScopeHeader: "nausf-auth", ccaHeader: cca})
+	w = f.request(t, map[string]string{
+		consumerIDHeader: f.consumerID, consumerTypeHeader: "AMF",
+		accessScopeHeader: "nausf-auth", ccaHeader: cca,
+	})
 	if w.Code != 204 {
 		t.Fatalf("instance-bound delegated token failed: %d %s", w.Code, w.Body)
 	}
@@ -362,8 +381,10 @@ func TestProxyJWTForConfiguredServices(t *testing.T) {
 		{"nausf-auth", http.MethodPost, "/nausf-auth/v1/ue-authentications", "AUSF"},
 		{"nudm-ueau", http.MethodPost, "/nudm-ueau/v1/test/security-information/generate-auth-data", "UDM"},
 		{"nudm-sdm", http.MethodGet, "/nudm-sdm/v2/test/nssai", "UDM"},
-		{"nudr-dr", http.MethodGet,
-			"/nudr-dr/v2/subscription-data/test/authentication-data/authentication-subscription", "UDR"},
+		{
+			"nudr-dr", http.MethodGet,
+			"/nudr-dr/v2/subscription-data/test/authentication-data/authentication-subscription", "UDR",
+		},
 	} {
 		t.Run(tt.service, func(t *testing.T) {
 			claims := f.claims()
@@ -403,8 +424,10 @@ func TestProxyNotifyRelaysProducerChallenge(t *testing.T) {
 func TestProxyDelegationDisabledByDefault(t *testing.T) {
 	f := newProxyFixture(t)
 	f.server.Config().Configuration.DelegatedOAuth = false
-	w := f.request(t, map[string]string{consumerIDHeader: f.consumerID, consumerTypeHeader: "AMF",
-		accessScopeHeader: "nausf-auth", ccaHeader: "unverified-assertion"})
+	w := f.request(t, map[string]string{
+		consumerIDHeader: f.consumerID, consumerTypeHeader: "AMF",
+		accessScopeHeader: "nausf-auth", ccaHeader: "unverified-assertion",
+	})
 	if w.Code != 403 || f.nrfCalls.Load() != 0 || f.producerCalls.Load() != 0 {
 		t.Fatalf("disabled delegation must fail without using legacy NRF authentication: %d", w.Code)
 	}
