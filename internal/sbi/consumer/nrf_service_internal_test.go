@@ -124,6 +124,22 @@ func TestRegisterNFInstanceKeepsHeartbeatTimer(t *testing.T) {
 	}
 }
 
+func TestRegisterNFInstanceRejectsInvalidOAuthSetup(t *testing.T) {
+	c := newNrfTestConsumer(t)
+	body := nfProfileJSON(15)
+	body["customInfo"] = map[string]any{"oauth2": true}
+	gock.New(testNrfUri).Put(testNfIdPath).Reply(http.StatusCreated).JSON(body)
+	if err := c.RegisterNFInstance(t.Context()); err == nil {
+		t.Fatal("OAuth-enabled registration without an NRF certificate must fail")
+	}
+	if c.Context().OAuth2Required() {
+		t.Fatal("invalid OAuth setup must not enable OAuth")
+	}
+	if !gock.IsDone() {
+		t.Fatal("registration request was not sent")
+	}
+}
+
 // TestRegisterNFInstanceRetriesUntilSuccess drives the retry loop: the first PUT fails on the NRF, the retry
 // one interval later succeeds.
 func TestRegisterNFInstanceRetriesUntilSuccess(t *testing.T) {
