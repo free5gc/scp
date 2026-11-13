@@ -303,7 +303,7 @@ func (c *ScpContext) GetDelegatedTokenCtx(parent context.Context, request Delega
 	cfg.SetBasePath(c.Config().NrfUri())
 	if request.ClientCredentialsAssertion != "" {
 		// TS 33.501 §13.4.1.3.2: preserve the consumer's CCA for NRF authentication.
-		cfg.AddDefaultHeader("3gpp-Sbi-Client-Credentials", request.ClientCredentialsAssertion)
+		req.SetClientCredentialsAssertion(request.ClientCredentialsAssertion)
 	}
 	client := AccTok.NewAPIClient(cfg)
 	rsp, err := client.AccessTokenRequestApi.AccessTokenRequest(parent, req)
