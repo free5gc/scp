@@ -281,6 +281,22 @@ func (s *Server) NonSupportAPI(gc *gin.Context) {
 		gc.Status(http.StatusNotFound)
 		return
 	}
+	parts := strings.Split(strings.TrimPrefix(uriPath, "/"), "/")
+	service := models.Nrf_NFMgmt_ServiceName(parts[0])
+	if _, known := scp_context.ProducerNFType(service); known && s.Context().OAuth2Required() {
+		// Gin's NoRoute chain does not include the service group's authorization middleware.
+		s.prepareProxyAuthorization(service)(gc)
+		if gc.IsAborted() {
+			return
+		}
+		realm := s.Config().SbiUri() + "/" + strings.Join(parts[:min(2, len(parts))], "/")
+		routerAuthorizationCheck := util_oauth.NewRouterAuthorizationCheck(service, realm)
+		routerAuthorizationCheck.Check(gc, s.Context())
+		if !gc.IsAborted() {
+			s.forwardAuthorizedProxyRequest(gc)
+		}
+		return
+	}
 	s.forwardProxyRequest(gc)
 }
 
@@ -368,6 +384,12 @@ const (
 // TS 29.500 §6.10.7: callback requests bypass access-token acquisition and validation.
 func (s *Server) forwardCallbackRequest(gc *gin.Context) {
 	if !s.Context().OAuth2Required() || gc.GetHeader(callbackHeader) == "" {
+		return
+	}
+	parts := strings.Split(strings.TrimPrefix(gc.Request.URL.Path, "/"), "/")
+	if _, known := scp_context.ProducerNFType(models.Nrf_NFMgmt_ServiceName(parts[0])); known {
+		// These producer API routes are not Notify receivers. A header cannot reclassify their operations.
+		// Let their route group, or NoRoute for a fallback path, enforce authorization.
 		return
 	}
 	if gc.Request.Method != http.MethodPost {

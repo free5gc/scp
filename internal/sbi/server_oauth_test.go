@@ -409,3 +409,45 @@ func TestProxyDelegationDisabledByDefault(t *testing.T) {
 		t.Fatalf("disabled delegation must fail without using legacy NRF authentication: %d", w.Code)
 	}
 }
+
+func TestProtectedProxyRoutesCannotBypassJWT(t *testing.T) {
+	f := newProxyFixture(t)
+	for _, tt := range []struct {
+		name, method, path string
+		callback           bool
+	}{
+		{"callback header on authentication", http.MethodPost, "/nausf-auth/v1/ue-authentications", true},
+		{"fallback path", http.MethodPost, "/nausf-auth/v1/unregistered", false},
+		{"fallback method", http.MethodDelete, "/nausf-auth/v1/ue-authentications", false},
+		{"callback header on fallback", http.MethodPost, "/nausf-auth/v1/unregistered", true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			before := f.producerCalls.Load()
+			r := httptest.NewRequestWithContext(t.Context(), tt.method, tt.path, nil)
+			r.Header.Set("Authorization", "Bearer invalid-token")
+			if tt.callback {
+				r.Header.Set(callbackHeader, "Nudr_DataRepository_DataChangeNotify")
+			}
+			w := httptest.NewRecorder()
+			f.server.router.ServeHTTP(w, r)
+			if w.Code != http.StatusUnauthorized || f.producerCalls.Load() != before {
+				t.Fatalf("JWT was bypassed: status=%d forwarded=%t", w.Code, f.producerCalls.Load() != before)
+			}
+		})
+	}
+}
+
+func TestFallbackProxyAcceptsValidJWT(t *testing.T) {
+	f := newProxyFixture(t)
+	authorization := "Bearer " + f.sign(t, f.claims(), f.key)
+	r := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/nausf-auth/v1/unregistered", nil)
+	r.Header.Set("Authorization", authorization)
+	w := httptest.NewRecorder()
+	f.server.router.ServeHTTP(w, r)
+	if w.Code != http.StatusNoContent || f.producerCalls.Load() != 1 || f.lastAuthorization != authorization {
+		t.Fatalf("valid fallback token was not preserved: status=%d", w.Code)
+	}
+	if f.nrfCalls.Load() != 0 {
+		t.Fatal("fallback must reuse the valid consumer token")
+	}
+}
