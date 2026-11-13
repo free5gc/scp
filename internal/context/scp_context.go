@@ -2,23 +2,30 @@ package context
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
 	"github.com/free5gc/openapi"
 	"github.com/free5gc/openapi/models"
+	"github.com/free5gc/openapi/nrf/AccTok"
 	"github.com/free5gc/openapi/oauth"
 	"github.com/free5gc/scp/internal/logger"
 	"github.com/free5gc/scp/pkg/factory"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"golang.org/x/oauth2"
 )
 
 type scp interface {
 	Config() *factory.Config
 }
 
-type NFContext interface{}
+type NFContext interface {
+	AuthorizationCheck(token string, serviceName models.Nrf_NFMgmt_ServiceName) error
+}
 
 var _ NFContext = &ScpContext{}
 
@@ -206,4 +213,130 @@ func (c *ScpContext) getTokenCtx(parent context.Context, request oauth.TokenRequ
 		return nil, pd, err
 	}
 	return context.WithValue(parent, openapi.ContextOAuth2, tokenCtx.Value(openapi.ContextOAuth2)), nil, nil
+}
+
+func (c *ScpContext) ProducerAudience(serviceName models.Nrf_NFMgmt_ServiceName) (oauth.AudiencePolicy, error) {
+	producer, known := ProducerNFType(serviceName)
+	if !known {
+		return oauth.AudiencePolicy{}, fmt.Errorf("unsupported proxy service %s", serviceName)
+	}
+	for _, service := range c.Config().ServiceList() {
+		if service.ServiceName == string(serviceName) {
+			return oauth.AudiencePolicy{NFType: producer, NFInstanceID: service.ProducerNFInstanceID}, nil
+		}
+	}
+	return oauth.AudiencePolicy{}, fmt.Errorf("proxy service %s is not configured", serviceName)
+}
+
+// TS 33.501 §13.4.1.3: the audience remains the producer; producer-side validation is still required.
+func (c *ScpContext) AuthorizationCheck(token string, serviceName models.Nrf_NFMgmt_ServiceName) error {
+	if !c.OAuth2Required() {
+		return nil
+	}
+	audience, err := c.ProducerAudience(serviceName)
+	if err != nil {
+		return err
+	}
+	c.mu.RLock()
+	issuer := c.nrfNfInstanceID
+	c.mu.RUnlock()
+	return oauth.VerifyOAuth(token, string(serviceName), audience, issuer, c.Config().NrfCertPem())
+}
+
+func TokenSubject(authorization string) (string, error) {
+	parts := strings.Fields(authorization)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+		return "", errors.New("invalid Bearer header")
+	}
+	claims := &jwt.RegisteredClaims{}
+	if _, _, err := jwt.NewParser().ParseUnverified(parts[1], claims); err != nil {
+		return "", err
+	}
+	id, err := uuid.Parse(claims.Subject)
+	if err != nil || id.Version() != 4 {
+		return "", errors.New("invalid consumer NF instance ID in token subject")
+	}
+	return claims.Subject, nil
+}
+
+type DelegatedTokenRequest struct {
+	ConsumerNFInstanceID       string
+	ConsumerNFType             models.Nrf_NFMgmt_NFType
+	ServiceName                models.Nrf_NFMgmt_ServiceName
+	Scope                      string
+	ClientCredentialsAssertion string
+}
+
+// GetDelegatedTokenCtx intentionally does not use the shared token cache: CCA and caller authentication
+// must be presented to NRF on each delegated acquisition, without crossing consumer identities.
+func (c *ScpContext) GetDelegatedTokenCtx(parent context.Context, request DelegatedTokenRequest) (
+	context.Context, *models.ProblemDetails, error,
+) {
+	if parent == nil {
+		parent = context.Background()
+	}
+	if !c.Config().Configuration.DelegatedOAuth {
+		return nil, &models.ProblemDetails{Status: 403, Cause: "ACCESS_TOKEN_DENIED"},
+			errors.New("delegated OAuth requires an NRF with original consumer authentication support")
+	}
+	id, err := uuid.Parse(request.ConsumerNFInstanceID)
+	if err != nil || id.Version() != 4 || request.ConsumerNFType == "" ||
+		!slices.Contains(strings.Fields(request.Scope), string(request.ServiceName)) {
+		return nil, nil, errors.New("invalid delegated consumer or scope")
+	}
+	audience, err := c.ProducerAudience(request.ServiceName)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// TS 33.501 §13.4.1.3.2: request the token for the original NF consumer, not for SCP.
+	req := &AccTok.AccessTokenRequestRequest{}
+	req.SetGrantType("client_credentials")
+	req.SetNfInstanceId(request.ConsumerNFInstanceID)
+	req.SetNfType(request.ConsumerNFType)
+	req.SetTargetNfType(audience.NFType)
+	req.SetScope(request.Scope)
+	if audience.NFInstanceID != "" {
+		req.SetTargetNfInstanceId(audience.NFInstanceID)
+	}
+	cfg := AccTok.NewConfiguration()
+	cfg.SetBasePath(c.Config().NrfUri())
+	if request.ClientCredentialsAssertion != "" {
+		// TS 33.501 §13.4.1.3.2: preserve the consumer's CCA for NRF authentication.
+		cfg.AddDefaultHeader("3gpp-Sbi-Client-Credentials", request.ClientCredentialsAssertion)
+	}
+	client := AccTok.NewAPIClient(cfg)
+	rsp, err := client.AccessTokenRequestApi.AccessTokenRequest(parent, req)
+	if err != nil {
+		pd := &models.ProblemDetails{Status: 403, Cause: "ACCESS_TOKEN_DENIED"}
+		var apiErr openapi.GenericOpenAPIError
+		if errors.As(err, &apiErr) {
+			if apiErr.ErrorStatus >= 500 {
+				pd.Status, pd.Cause = 502, "SYSTEM_FAILURE"
+			}
+			if body, ok := apiErr.Model().(AccTok.AccessTokenRequestError); ok {
+				pd.AccessTokenError = body.Nrf_AccTok_AccessTokenErr
+			}
+		} else {
+			pd.Status, pd.Cause = 504, "NRF_NOT_REACHABLE"
+		}
+		return nil, pd, fmt.Errorf("request delegated access token: %w", err)
+	}
+	if rsp == nil || rsp.Nrf_AccTok_AccessTokenRsp == nil {
+		return nil, &models.ProblemDetails{Status: 502, Cause: "SYSTEM_FAILURE"}, errors.New("NRF token response is empty")
+	}
+	token := rsp.Nrf_AccTok_AccessTokenRsp
+	if !strings.EqualFold(token.Token_type, "Bearer") {
+		return nil, &models.ProblemDetails{Status: 502, Cause: "SYSTEM_FAILURE"}, errors.New("NRF token type is not Bearer")
+	}
+	authorization := "Bearer " + token.Access_token
+	if err := c.AuthorizationCheck(authorization, request.ServiceName); err != nil {
+		return nil, &models.ProblemDetails{Status: 502, Cause: "SYSTEM_FAILURE"}, fmt.Errorf("invalid NRF token: %w", err)
+	}
+	subject, err := TokenSubject(authorization)
+	if err != nil || subject != request.ConsumerNFInstanceID {
+		return nil, &models.ProblemDetails{Status: 502, Cause: "SYSTEM_FAILURE"}, errors.New("NRF token subject mismatch")
+	}
+	source := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token.Access_token, TokenType: "Bearer"})
+	return context.WithValue(parent, openapi.ContextOAuth2, source), nil, nil
 }

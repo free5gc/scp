@@ -9,9 +9,38 @@ import (
 	"time"
 
 	"github.com/free5gc/openapi"
+	"github.com/free5gc/openapi/models"
+	scp_context "github.com/free5gc/scp/internal/context"
+	"github.com/free5gc/scp/pkg/factory"
 	"github.com/free5gc/util/nfheartbeat"
 	"github.com/h2non/gock"
 )
+
+func TestBuildNfProfileAllowedNfTypes(t *testing.T) {
+	c := newNrfTestConsumer(t)
+	c.Config().Configuration.ServiceList = []factory.Service{
+		{ServiceName: factory.ServiceNausfAuth}, {ServiceName: factory.ServiceNudmUeau},
+		{ServiceName: factory.ServiceNudmSubManage}, {ServiceName: factory.ServiceNudrDR},
+	}
+	profile, err := c.buildNfProfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(profile.NfServices) != 4 {
+		t.Fatalf("service count = %d, want 4", len(profile.NfServices))
+	}
+	for _, service := range profile.NfServices {
+		if len(service.AllowedNfTypes) == 0 {
+			t.Fatalf("service %s has no authorization policy", service.ServiceName)
+		}
+		original := service.AllowedNfTypes[0]
+		service.AllowedNfTypes[0] = models.Nrf_NFMgmt_NFType_SCP
+		allowed, _ := scp_context.AllowedNfTypesForService(service.ServiceName)
+		if allowed[0] != original {
+			t.Fatal("profile mutation changed the shared service policy")
+		}
+	}
+}
 
 func TestSendUpdateNFInstance(t *testing.T) {
 	tests := []struct {

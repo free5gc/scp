@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"regexp"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -19,11 +20,14 @@ import (
 	scp_context "github.com/free5gc/scp/internal/context"
 	"github.com/free5gc/scp/internal/logger"
 	"github.com/free5gc/scp/internal/sbi/processor"
+	util_oauth "github.com/free5gc/scp/internal/util"
 	"github.com/free5gc/scp/pkg/factory"
 	"github.com/free5gc/util/httpwrapper"
 	logger_util "github.com/free5gc/util/logger"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"golang.org/x/oauth2"
 )
 
 const (
@@ -95,22 +99,28 @@ func NewServer(scp scp, tlsKeyLogPath string) (*Server, error) {
 		AllowAllOrigins: true,
 		MaxAge:          CorsConfigMaxAge,
 	}))
+	s.router.Use(s.forwardCallbackRequest)
 
-	endpoints := s.getAusfUeAuthEndpoints()
-	group := s.router.Group(factory.NausfAuthUriPrefix)
-	applyEndpoints(group, endpoints)
-
-	endpoints = s.getUdmUeAuthEndpoints()
-	group = s.router.Group(factory.NudmUeauUriPrefix)
-	applyEndpoints(group, endpoints)
-
-	endpoints = s.getUdrAuthSubsDataEndpoints()
-	group = s.router.Group(factory.NudrDRUriPrefix)
-	applyEndpoints(group, endpoints)
-
-	endpoints = s.getUdmSubManageEndpoints()
-	group = s.router.Group(factory.NudmSubManageUriPrefix)
-	applyEndpoints(group, endpoints)
+	for _, api := range []struct {
+		serviceName models.Nrf_NFMgmt_ServiceName
+		prefix      string
+		endpoints   []Endpoint
+	}{
+		{models.Nrf_NFMgmt_ServiceName_NAUSF_AUTH, factory.NausfAuthUriPrefix, s.getAusfUeAuthEndpoints()},
+		{models.Nrf_NFMgmt_ServiceName_NUDM_UEAU, factory.NudmUeauUriPrefix, s.getUdmUeAuthEndpoints()},
+		{models.Nrf_NFMgmt_ServiceName_NUDR_DR, factory.NudrDRUriPrefix, s.getUdrAuthSubsDataEndpoints()},
+		{models.Nrf_NFMgmt_ServiceName_NUDM_SDM, factory.NudmSubManageUriPrefix, s.getUdmSubManageEndpoints()},
+	} {
+		group := s.router.Group(api.prefix)
+		routerAuthorizationCheck := util_oauth.NewRouterAuthorizationCheck(
+			api.serviceName, s.Config().SbiUri()+api.prefix)
+		group.Use(s.prepareProxyAuthorization(api.serviceName))
+		group.Use(func(c *gin.Context) {
+			routerAuthorizationCheck.Check(c, s.Context())
+		})
+		group.Use(s.forwardAuthorizedProxyRequest)
+		applyEndpoints(group, api.endpoints)
+	}
 
 	// For not found API
 	s.router.NoRoute(s.NonSupportAPI)
@@ -271,6 +281,11 @@ func (s *Server) NonSupportAPI(gc *gin.Context) {
 		gc.Status(http.StatusNotFound)
 		return
 	}
+	s.forwardProxyRequest(gc)
+}
+
+func (s *Server) forwardProxyRequest(gc *gin.Context) {
+	uriPath := gc.Request.URL.Path
 
 	targetUri := ""
 	targetNF, err := extractNFName(uriPath)
@@ -340,4 +355,135 @@ func extractNFName(uri string) (string, error) {
 		return matches[1], nil
 	}
 	return "", fmt.Errorf("no NF name found in URI: %s", uri)
+}
+
+const (
+	callbackHeader     = "3gpp-Sbi-Callback"
+	consumerIDHeader   = "3gpp-Sbi-Discovery-requester-nf-instance"
+	consumerTypeHeader = "3gpp-Sbi-Discovery-requester-nf-type"
+	accessScopeHeader  = "3gpp-Sbi-Access-Scope"
+	ccaHeader          = "3gpp-Sbi-Client-Credentials"
+)
+
+// TS 29.500 §6.10.7: callback requests bypass access-token acquisition and validation.
+func (s *Server) forwardCallbackRequest(gc *gin.Context) {
+	if !s.Context().OAuth2Required() || gc.GetHeader(callbackHeader) == "" {
+		return
+	}
+	if gc.Request.Method != http.MethodPost {
+		sendProblem(gc, http.StatusBadRequest, openapi.ProblemDetailsMalformedReqSyntax("callback must use POST"))
+		gc.Abort()
+		return
+	}
+	s.forwardProxyRequest(gc)
+	gc.Abort()
+}
+
+// Prepare a producer-bound token before the common router authorization check runs.
+func (s *Server) prepareProxyAuthorization(service models.Nrf_NFMgmt_ServiceName) gin.HandlerFunc {
+	return func(gc *gin.Context) {
+		if !s.Context().OAuth2Required() {
+			return
+		}
+		if _, err := s.Context().ProducerAudience(service); err != nil {
+			sendProblem(gc, http.StatusNotFound, openapi.ProblemDetailsMalformedReqSyntax("service is not configured"))
+			gc.Abort()
+			return
+		}
+		if len(gc.Request.Header.Values("Authorization")) > 1 {
+			sendProblem(gc, http.StatusBadRequest, openapi.ProblemDetailsMalformedReqSyntax("multiple Authorization headers"))
+			gc.Abort()
+			return
+		}
+		if gc.GetHeader("Authorization") == "" && !s.acquireDelegatedToken(gc, service) {
+			gc.Abort()
+		}
+	}
+}
+
+func (s *Server) forwardAuthorizedProxyRequest(gc *gin.Context) {
+	if !s.Context().OAuth2Required() {
+		return
+	}
+	// The router authorization check has already verified this exact token.
+	subject, err := scp_context.TokenSubject(gc.GetHeader("Authorization"))
+	if err != nil || (gc.GetHeader(consumerIDHeader) != "" && gc.GetHeader(consumerIDHeader) != subject) {
+		gc.Header("WWW-Authenticate", `Bearer error="invalid_token"`)
+		sendProblem(gc, http.StatusUnauthorized, &models.ProblemDetails{
+			Status: http.StatusUnauthorized, Cause: "ACCESS_TOKEN_DENIED",
+		})
+		gc.Abort()
+		return
+	}
+	// Keep the original request and consumer token; do not acquire a token as SCP.
+	s.forwardProxyRequest(gc)
+	gc.Abort()
+}
+
+func (s *Server) acquireDelegatedToken(gc *gin.Context, service models.Nrf_NFMgmt_ServiceName) bool {
+	var invalid []models.InvalidParam
+	for _, name := range []string{consumerIDHeader, consumerTypeHeader, accessScopeHeader} {
+		if strings.TrimSpace(gc.GetHeader(name)) == "" {
+			invalid = append(invalid, models.InvalidParam{Param: name})
+		}
+	}
+	if len(invalid) != 0 {
+		// TS 29.500 §6.10.11.2.2: missing information is a 400, not an OAuth challenge.
+		s.proxyProblem(gc, &models.ProblemDetails{
+			Status: http.StatusBadRequest, Cause: "MISSING_ACCESS_TOKEN_INFO", InvalidParams: invalid,
+		})
+		return false
+	}
+	consumerID := gc.GetHeader(consumerIDHeader)
+	id, err := uuid.Parse(consumerID)
+	consumerType := models.Nrf_NFMgmt_NFType(gc.GetHeader(consumerTypeHeader))
+	allowed, _ := scp_context.AllowedNfTypesForService(service)
+	if err != nil || id.Version() != 4 || !slices.Contains(allowed, consumerType) ||
+		!slices.Contains(strings.Fields(gc.GetHeader(accessScopeHeader)), string(service)) {
+		s.proxyProblem(gc, &models.ProblemDetails{Status: http.StatusBadRequest, Cause: "MANDATORY_IE_INCORRECT"})
+		return false
+	}
+	// An arbitrary discovery header is not authenticated identity. NRF verifies a forwarded CCA;
+	// without one, only a verified TLS peer bound to this consumer ID may request delegation.
+	if gc.GetHeader(ccaHeader) == "" && !verifiedConsumer(gc.Request, consumerID) {
+		s.proxyProblem(gc, &models.ProblemDetails{Status: http.StatusForbidden, Cause: "ACCESS_TOKEN_DENIED"})
+		return false
+	}
+	tokenCtx, pd, err := s.Context().GetDelegatedTokenCtx(gc.Request.Context(), scp_context.DelegatedTokenRequest{
+		ConsumerNFInstanceID: consumerID, ConsumerNFType: consumerType, ServiceName: service,
+		Scope: gc.GetHeader(accessScopeHeader), ClientCredentialsAssertion: gc.GetHeader(ccaHeader),
+	})
+	if err != nil {
+		if pd == nil {
+			pd = &models.ProblemDetails{Status: http.StatusBadGateway, Cause: "SYSTEM_FAILURE"}
+		}
+		s.proxyProblem(gc, pd)
+		return false
+	}
+	source, ok := tokenCtx.Value(openapi.ContextOAuth2).(oauth2.TokenSource)
+	if !ok {
+		s.proxyProblem(gc, &models.ProblemDetails{Status: http.StatusBadGateway, Cause: "SYSTEM_FAILURE"})
+		return false
+	}
+	token, err := source.Token()
+	if err != nil {
+		s.proxyProblem(gc, &models.ProblemDetails{Status: http.StatusBadGateway, Cause: "SYSTEM_FAILURE"})
+		return false
+	}
+	token.SetAuthHeader(gc.Request)
+	return true
+}
+
+func verifiedConsumer(request *http.Request, consumerID string) bool {
+	if request.TLS == nil || len(request.TLS.VerifiedChains) == 0 || len(request.TLS.VerifiedChains[0]) == 0 {
+		return false
+	}
+	leaf := request.TLS.VerifiedChains[0][0]
+	return len(leaf.URIs) == 1 && leaf.URIs[0].String() == "urn:uuid:"+consumerID
+}
+
+func (s *Server) proxyProblem(gc *gin.Context, problem *models.ProblemDetails) {
+	// TS 29.500 §6.10.11.2.2 / §6.10.8.2: identify SCP as the originator of the error.
+	gc.Header("Server", "SCP-"+s.Config().SbiRegisterIP())
+	sendProblem(gc, int(problem.Status), problem)
 }
