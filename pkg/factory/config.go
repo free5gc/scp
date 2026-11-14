@@ -88,7 +88,8 @@ type Configuration struct {
 	Sbi             *Sbi           `yaml:"sbi,omitempty" valid:"required"`
 	NrfUri          string         `yaml:"nrfUri,omitempty" valid:"required"`
 	NrfCertPem      string         `yaml:"nrfCertPem,omitempty" valid:"optional"`
-	// Enable only with an NRF that authenticates the original consumer's forwarded CCA.
+	// TS 29.500 §6.10.11.2.1: delegated discovery may require SCP to obtain a token for the original consumer.
+	// Disabled by default; enable only when SCP is officially enabled in the deployment.
 	DelegatedOAuth bool      `yaml:"delegatedOAuth,omitempty" valid:"type(bool)"`
 	ServiceList    []Service `yaml:"serviceList,omitempty" valid:"required"`
 	AmfUri         string    `yaml:"amfUri,omitempty" valid:"required"`

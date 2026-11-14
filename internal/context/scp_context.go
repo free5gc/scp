@@ -232,6 +232,8 @@ type DelegatedTokenRequest struct {
 	ClientCredentialsAssertion string
 }
 
+// TS 29.500 §6.10.11.2.1: obtain an access token on behalf of the original consumer for delegated discovery.
+// Disabled by default; enable only when SCP is officially enabled in the deployment.
 func (c *ScpContext) GetDelegatedTokenCtx(parent context.Context, request DelegatedTokenRequest) (
 	context.Context, *models.ProblemDetails, error,
 ) {
