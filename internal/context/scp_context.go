@@ -144,7 +144,20 @@ func (c *ScpContext) GetTokenCtx(
 	if !c.OAuth2Required() {
 		return parent, nil, nil
 	}
-	return c.getTokenCtx(parent, c.tokenRequest(serviceName, targetNF))
+	// TS 29.510 §6.3.5.2.2
+	tokenCtx, pd, err := oauth.GetTokenCtx(
+		oauth.TokenRequest{
+			ConsumerNFType:       models.Nrf_NFMgmt_NFType_SCP,
+			ConsumerNFInstanceID: c.NfInstID(),
+			TargetNFType:         targetNF,
+			NRFURI:               c.Config().NrfUri(),
+			Scope:                string(serviceName),
+	})
+	if err != nil {
+		return nil, pd, err
+	}
+	// Preserve the caller context when attaching the token source.
+	return context.WithValue(parent, openapi.ContextOAuth2, tokenCtx.Value(openapi.ContextOAuth2)), nil, nil
 }
 
 func (c *ScpContext) GetTokenCtxForNFInstance(
@@ -166,7 +179,20 @@ func (c *ScpContext) GetTokenCtxForNFInstance(
 	if targetID.Version() != 4 {
 		return nil, nil, fmt.Errorf("invalid target NF instance ID: UUID must be version 4")
 	}
-	return c.getTokenCtx(parent, c.tokenRequestForNFInstance(serviceName, targetNF, targetNFInstanceID))
+	// TS 29.510 §6.3.5.2.2
+	tokenCtx, pd, err := oauth.GetTokenCtx(oauth.TokenRequest{
+		ConsumerNFType:       models.Nrf_NFMgmt_NFType_SCP,
+		ConsumerNFInstanceID: c.NfInstID(),
+		TargetNFType:         targetNF,
+		NRFURI:               c.Config().NrfUri(),
+		Scope:                string(serviceName),
+		TargetNFInstanceID:   targetNFInstanceID,
+	})
+	if err != nil {
+		return nil, pd, err
+	}
+	// Preserve the caller context when attaching the token source.
+	return context.WithValue(parent, openapi.ContextOAuth2, tokenCtx.Value(openapi.ContextOAuth2)), nil, nil
 }
 
 func (c *ScpContext) GetTokenCtxForNRF(
@@ -177,42 +203,6 @@ func (c *ScpContext) GetTokenCtxForNRF(
 	nrfNfInstanceID := c.nrfNfInstanceID
 	c.mu.RUnlock()
 	return c.GetTokenCtxForNFInstance(parent, serviceName, models.Nrf_NFMgmt_NFType_NRF, nrfNfInstanceID)
-}
-
-func (c *ScpContext) tokenRequest(
-	serviceName models.Nrf_NFMgmt_ServiceName,
-	targetNF models.Nrf_NFMgmt_NFType,
-) oauth.TokenRequest {
-	// TS 29.510 §6.3.5.2.2: AccessTokenReq identifies the consumer, target NF and requested service scope.
-	return oauth.TokenRequest{
-		ConsumerNFType:       models.Nrf_NFMgmt_NFType_SCP,
-		ConsumerNFInstanceID: c.NfInstID(),
-		TargetNFType:         targetNF,
-		NRFURI:               c.Config().NrfUri(),
-		Scope:                string(serviceName),
-	}
-}
-
-func (c *ScpContext) tokenRequestForNFInstance(
-	serviceName models.Nrf_NFMgmt_ServiceName,
-	targetNF models.Nrf_NFMgmt_NFType,
-	targetNFInstanceID string,
-) oauth.TokenRequest {
-	// TS 29.510 §6.3.5.2.2: targetNfInstanceId selects a specific NF service producer.
-	request := c.tokenRequest(serviceName, targetNF)
-	request.TargetNFInstanceID = targetNFInstanceID
-	return request
-}
-
-// Preserve the caller's context when attaching the shared OpenAPI token source.
-func (c *ScpContext) getTokenCtx(parent context.Context, request oauth.TokenRequest) (
-	context.Context, *models.ProblemDetails, error,
-) {
-	tokenCtx, pd, err := oauth.GetTokenCtx(request)
-	if err != nil {
-		return nil, pd, err
-	}
-	return context.WithValue(parent, openapi.ContextOAuth2, tokenCtx.Value(openapi.ContextOAuth2)), nil, nil
 }
 
 func (c *ScpContext) ProducerAudience(serviceName models.Nrf_NFMgmt_ServiceName) (oauth.AudiencePolicy, error) {
