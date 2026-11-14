@@ -73,7 +73,7 @@ func (s *nudmService) SendGenerateAuthDataRequest(
 		return nil, nilResponse("UDM generate authentication data")
 	}
 	ctx, _, err := s.consumer.Context().GetTokenCtx(parent,
-		models.Nrf_NFMgmt_ServiceName_NUDM_UEAU, models.Nrf_NFMgmt_NFType_UDM)
+		models.Nrf_NFMgmt_ServiceName_NUDM_UEAU, models.Nrf_NFMgmt_NFType_UDM, "")
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func (s *nudmService) SendGetNSSAIRequest(
 		return nil, nilResponse("UDM NSSAI")
 	}
 	ctx, _, err := s.consumer.Context().GetTokenCtx(parent,
-		models.Nrf_NFMgmt_ServiceName_NUDM_SDM, models.Nrf_NFMgmt_NFType_UDM)
+		models.Nrf_NFMgmt_ServiceName_NUDM_SDM, models.Nrf_NFMgmt_NFType_UDM, "")
 	if err != nil {
 		return nil, err
 	}

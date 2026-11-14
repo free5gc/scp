@@ -72,7 +72,7 @@ func TestGetTokenCtxOAuthDisabled(t *testing.T) {
 	parent, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
-	ctx, pd, err := c.GetTokenCtx(parent, models.Nrf_NFMgmt_ServiceName_NNRF_DISC, models.Nrf_NFMgmt_NFType_NRF)
+	ctx, pd, err := c.GetTokenCtx(parent, models.Nrf_NFMgmt_ServiceName_NNRF_DISC, models.Nrf_NFMgmt_NFType_NRF, "")
 	if err != nil || pd != nil || ctx != parent {
 		t.Fatalf("disabled OAuth must return the parent context: ctx=%v pd=%+v err=%v", ctx, pd, err)
 	}
@@ -85,7 +85,7 @@ func TestGetTokenCtxOAuthDisabled(t *testing.T) {
 	}
 
 	//nolint:staticcheck // Exercise GetTokenCtx's explicit nil-parent fallback.
-	ctx, pd, err = c.GetTokenCtx(nil, models.Nrf_NFMgmt_ServiceName_NNRF_DISC, models.Nrf_NFMgmt_NFType_NRF)
+	ctx, pd, err = c.GetTokenCtx(nil, models.Nrf_NFMgmt_ServiceName_NNRF_DISC, models.Nrf_NFMgmt_NFType_NRF, "")
 	if err != nil || pd != nil || ctx == nil || ctx.Err() != nil {
 		t.Fatalf("nil parent must use a background context: pd=%+v err=%v", pd, err)
 	}
@@ -180,7 +180,7 @@ func TestGetTokenCtxOAuthEnabled(t *testing.T) {
 			if tt.nrfHelper {
 				ctx, pd, err = c.GetTokenCtxForNRF(requestCtx, tt.service)
 			} else {
-				ctx, pd, err = c.GetTokenCtx(requestCtx, tt.service, tt.target)
+				ctx, pd, err = c.GetTokenCtx(requestCtx, tt.service, tt.target, "")
 			}
 			if err != nil || pd != nil || ctx == nil {
 				t.Fatalf("GetTokenCtx: pd=%+v err=%v", pd, err)
@@ -208,7 +208,7 @@ func TestGetTokenCtxOAuthEnabled(t *testing.T) {
 			if tt.nrfHelper {
 				_, pd, err = c.GetTokenCtxForNRF(t.Context(), tt.service)
 			} else {
-				_, pd, err = c.GetTokenCtx(t.Context(), tt.service, tt.target)
+				_, pd, err = c.GetTokenCtx(t.Context(), tt.service, tt.target, "")
 			}
 			if err != nil || pd != nil {
 				t.Fatalf("cached GetTokenCtx: pd=%+v err=%v", pd, err)
@@ -220,14 +220,14 @@ func TestGetTokenCtxOAuthEnabled(t *testing.T) {
 	}
 }
 
-func TestGetTokenCtxForNFInstanceRejectsInvalidID(t *testing.T) {
+func TestGetTokenCtxRejectsInvalidID(t *testing.T) {
 	c := newOAuthTestContext(t, "http://nrf.example.com")
 	c.Config().Configuration.NrfCertPem = writeNrfCertificate(t, uuid.NewString())
 	if err := c.SetOAuth2Required(true); err != nil {
 		t.Fatal(err)
 	}
-	for _, id := range []string{"", "not-a-uuid", "6ba7b810-9dad-11d1-80b4-00c04fd430c8"} {
-		ctx, _, err := c.GetTokenCtxForNFInstance(t.Context(),
+	for _, id := range []string{" ", "not-a-uuid", "6ba7b810-9dad-11d1-80b4-00c04fd430c8"} {
+		ctx, _, err := c.GetTokenCtx(t.Context(),
 			models.Nrf_NFMgmt_ServiceName_NNRF_DISC, models.Nrf_NFMgmt_NFType_NRF, id)
 		if err == nil || ctx != nil {
 			t.Fatalf("invalid target %q must fail without a token context", id)
@@ -257,7 +257,7 @@ func TestGetTokenCtxTokenRequestFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx, _, err := c.GetTokenCtx(t.Context(), models.Nrf_NFMgmt_ServiceName_NNRF_DISC, models.Nrf_NFMgmt_NFType_NRF)
+	ctx, _, err := c.GetTokenCtx(t.Context(), models.Nrf_NFMgmt_ServiceName_NNRF_DISC, models.Nrf_NFMgmt_NFType_NRF, "")
 	if err == nil || ctx != nil {
 		t.Fatalf("NRF failure must return an error without a token context: ctx=%v err=%v", ctx, err)
 	}

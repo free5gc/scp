@@ -137,33 +137,6 @@ func (c *ScpContext) GetTokenCtx(
 	parent context.Context,
 	serviceName models.Nrf_NFMgmt_ServiceName,
 	targetNF models.Nrf_NFMgmt_NFType,
-) (context.Context, *models.ProblemDetails, error) {
-	if parent == nil {
-		parent = context.Background()
-	}
-	if !c.OAuth2Required() {
-		return parent, nil, nil
-	}
-	// TS 29.510 §6.3.5.2.2
-	tokenCtx, pd, err := oauth.GetTokenCtx(
-		oauth.TokenRequest{
-			ConsumerNFType:       models.Nrf_NFMgmt_NFType_SCP,
-			ConsumerNFInstanceID: c.NfInstID(),
-			TargetNFType:         targetNF,
-			NRFURI:               c.Config().NrfUri(),
-			Scope:                string(serviceName),
-	})
-	if err != nil {
-		return nil, pd, err
-	}
-	// Preserve the caller context when attaching the token source.
-	return context.WithValue(parent, openapi.ContextOAuth2, tokenCtx.Value(openapi.ContextOAuth2)), nil, nil
-}
-
-func (c *ScpContext) GetTokenCtxForNFInstance(
-	parent context.Context,
-	serviceName models.Nrf_NFMgmt_ServiceName,
-	targetNF models.Nrf_NFMgmt_NFType,
 	targetNFInstanceID string,
 ) (context.Context, *models.ProblemDetails, error) {
 	if parent == nil {
@@ -172,12 +145,14 @@ func (c *ScpContext) GetTokenCtxForNFInstance(
 	if !c.OAuth2Required() {
 		return parent, nil, nil
 	}
-	targetID, err := uuid.Parse(strings.TrimSpace(targetNFInstanceID))
-	if err != nil {
-		return nil, nil, fmt.Errorf("invalid target NF instance ID: %w", err)
-	}
-	if targetID.Version() != 4 {
-		return nil, nil, fmt.Errorf("invalid target NF instance ID: UUID must be version 4")
+	if targetNFInstanceID != "" {
+		targetID, err := uuid.Parse(targetNFInstanceID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid target NF instance ID: %w", err)
+		}
+		if targetID.Version() != 4 {
+			return nil, nil, fmt.Errorf("invalid target NF instance ID: UUID must be version 4")
+		}
 	}
 	// TS 29.510 §6.3.5.2.2
 	tokenCtx, pd, err := oauth.GetTokenCtx(oauth.TokenRequest{
@@ -202,7 +177,7 @@ func (c *ScpContext) GetTokenCtxForNRF(
 	c.mu.RLock()
 	nrfNfInstanceID := c.nrfNfInstanceID
 	c.mu.RUnlock()
-	return c.GetTokenCtxForNFInstance(parent, serviceName, models.Nrf_NFMgmt_NFType_NRF, nrfNfInstanceID)
+	return c.GetTokenCtx(parent, serviceName, models.Nrf_NFMgmt_NFType_NRF, nrfNfInstanceID)
 }
 
 func (c *ScpContext) ProducerAudience(serviceName models.Nrf_NFMgmt_ServiceName) (oauth.AudiencePolicy, error) {

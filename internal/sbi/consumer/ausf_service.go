@@ -47,7 +47,7 @@ func (s *nausfService) SendUeAuthPostRequest(
 		return nil, nilResponse("AUSF authentication")
 	}
 	ctx, _, err := s.consumer.Context().GetTokenCtx(parent,
-		models.Nrf_NFMgmt_ServiceName_NAUSF_AUTH, models.Nrf_NFMgmt_NFType_AUSF)
+		models.Nrf_NFMgmt_ServiceName_NAUSF_AUTH, models.Nrf_NFMgmt_NFType_AUSF, "")
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +73,7 @@ func (s *nausfService) SendAuth5gAkaConfirmRequest(
 		return nil, nilResponse("AUSF 5G AKA confirmation")
 	}
 	ctx, _, err := s.consumer.Context().GetTokenCtx(parent,
-		models.Nrf_NFMgmt_ServiceName_NAUSF_AUTH, models.Nrf_NFMgmt_NFType_AUSF)
+		models.Nrf_NFMgmt_ServiceName_NAUSF_AUTH, models.Nrf_NFMgmt_NFType_AUSF, "")
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +100,7 @@ func (s *nausfService) SendEapAuthConfirmRequest(
 		return nil, nilResponse("AUSF EAP confirmation")
 	}
 	ctx, _, err := s.consumer.Context().GetTokenCtx(parent,
-		models.Nrf_NFMgmt_ServiceName_NAUSF_AUTH, models.Nrf_NFMgmt_NFType_AUSF)
+		models.Nrf_NFMgmt_ServiceName_NAUSF_AUTH, models.Nrf_NFMgmt_NFType_AUSF, "")
 	if err != nil {
 		return nil, err
 	}
