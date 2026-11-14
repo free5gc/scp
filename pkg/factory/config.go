@@ -13,6 +13,7 @@ import (
 	"github.com/free5gc/openapi/models"
 	"github.com/free5gc/scp/internal/logger"
 	"github.com/free5gc/util/nfheartbeat"
+	"github.com/google/uuid"
 )
 
 const (
@@ -87,17 +88,20 @@ type Configuration struct {
 	Sbi             *Sbi           `yaml:"sbi,omitempty" valid:"required"`
 	NrfUri          string         `yaml:"nrfUri,omitempty" valid:"required"`
 	NrfCertPem      string         `yaml:"nrfCertPem,omitempty" valid:"optional"`
-	ServiceList     []Service      `yaml:"serviceList,omitempty" valid:"required"`
-	AmfUri          string         `yaml:"amfUri,omitempty" valid:"required"`
-	AusfUri         string         `yaml:"ausfUri,omitempty" valid:"required"`
-	ChfUri          string         `yaml:"chfUri,omitempty" valid:"required"`
-	NefUri          string         `yaml:"nefUri,omitempty" valid:"required"`
-	NssfUri         string         `yaml:"nssfUri,omitempty" valid:"required"`
-	PcfUri          string         `yaml:"pcfUri,omitempty" valid:"required"`
-	SmfUri          string         `yaml:"smfUri,omitempty" valid:"required"`
-	UdmUri          string         `yaml:"udmUri,omitempty" valid:"required"`
-	UdrUri          string         `yaml:"udrUri,omitempty" valid:"required"`
-	UpfUri          string         `yaml:"upfUri,omitempty" valid:"required"`
+	// TS 29.500 §6.10.11.2.1: delegated discovery may require SCP to obtain a token for the original consumer.
+	// Disabled by default; enable only when SCP is officially enabled in the deployment.
+	DelegatedOAuth bool      `yaml:"delegatedOAuth,omitempty" valid:"type(bool)"`
+	ServiceList    []Service `yaml:"serviceList,omitempty" valid:"required"`
+	AmfUri         string    `yaml:"amfUri,omitempty" valid:"required"`
+	AusfUri        string    `yaml:"ausfUri,omitempty" valid:"required"`
+	ChfUri         string    `yaml:"chfUri,omitempty" valid:"required"`
+	NefUri         string    `yaml:"nefUri,omitempty" valid:"required"`
+	NssfUri        string    `yaml:"nssfUri,omitempty" valid:"required"`
+	PcfUri         string    `yaml:"pcfUri,omitempty" valid:"required"`
+	SmfUri         string    `yaml:"smfUri,omitempty" valid:"required"`
+	UdmUri         string    `yaml:"udmUri,omitempty" valid:"required"`
+	UdrUri         string    `yaml:"udrUri,omitempty" valid:"required"`
+	UpfUri         string    `yaml:"upfUri,omitempty" valid:"required"`
 	// NfHeartBeatTimer is the fallback heartbeat interval in seconds, from 1 to
 	// 3600 as the NRF accepts. The interval the NRF assigns always wins.
 	NfHeartBeatTimer int32 `yaml:"nfHeartBeatTimer,omitempty" valid:"optional,range(1|3600)"`
@@ -116,6 +120,12 @@ func (c *Configuration) validate() (bool, error) {
 		}
 	}
 	for i, s := range c.ServiceList {
+		if s.ProducerNFInstanceID != "" {
+			id, err := uuid.Parse(s.ProducerNFInstanceID)
+			if err != nil || id.Version() != 4 {
+				return false, appendInvalid(fmt.Errorf("serviceList[%d].producerNfInstanceId must be a UUID v4", i))
+			}
+		}
 		switch s.ServiceName {
 		case ServiceNausfAuth, ServiceNudmUeau, ServiceNudmSubManage, ServiceNudrDR:
 		default:
@@ -155,6 +165,8 @@ func (s *Sbi) validate() (bool, error) {
 type Service struct {
 	ServiceName string `yaml:"serviceName"`
 	SuppFeat    string `yaml:"suppFeat,omitempty"`
+	// Trusted identity of the configured backend, needed to accept instance-specific access tokens.
+	ProducerNFInstanceID string `yaml:"producerNfInstanceId,omitempty"`
 }
 
 type Tls struct {

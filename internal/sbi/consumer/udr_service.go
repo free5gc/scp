@@ -45,7 +45,7 @@ func (s *nudrService) SendAuthSubsDataGet(
 		return nil, nilResponse("UDR query authentication subscription")
 	}
 	ctx, _, err := s.consumer.Context().GetTokenCtx(parent,
-		models.Nrf_NFMgmt_ServiceName_NUDR_DR, models.Nrf_NFMgmt_NFType_UDR)
+		models.Nrf_NFMgmt_ServiceName_NUDR_DR, models.Nrf_NFMgmt_NFType_UDR, "")
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +68,7 @@ func (s *nudrService) ModifyAuthenticationPatch(
 		return nilResponse("UDR modify authentication subscription")
 	}
 	ctx, _, err := s.consumer.Context().GetTokenCtx(parent,
-		models.Nrf_NFMgmt_ServiceName_NUDR_DR, models.Nrf_NFMgmt_NFType_UDR)
+		models.Nrf_NFMgmt_ServiceName_NUDR_DR, models.Nrf_NFMgmt_NFType_UDR, "")
 	if err != nil {
 		return err
 	}
@@ -87,7 +87,7 @@ func (s *nudrService) CreateAuthenticationStatus(
 		return nilResponse("UDR create authentication status")
 	}
 	ctx, _, err := s.consumer.Context().GetTokenCtx(parent,
-		models.Nrf_NFMgmt_ServiceName_NUDR_DR, models.Nrf_NFMgmt_NFType_UDR)
+		models.Nrf_NFMgmt_ServiceName_NUDR_DR, models.Nrf_NFMgmt_NFType_UDR, "")
 	if err != nil {
 		return err
 	}

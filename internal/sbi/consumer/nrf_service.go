@@ -143,7 +143,9 @@ func (s *nnrfService) RegisterNFInstance(ctx context.Context) error {
 			} else {
 				logger.ConsumerLog.Infof("NFRegister Updated")
 			}
-			s.applyOAuthSetting(nfProfile)
+			if err := s.applyOAuthSetting(nfProfile); err != nil {
+				return fmt.Errorf("apply NRF OAuth2 setting: %w", err)
+			}
 			return nil
 		}
 
@@ -174,37 +176,34 @@ func stringsLastSlash(path string) int {
 	return 0
 }
 
-func (s *nnrfService) applyOAuthSetting(profile *models.Nrf_NFMgmt_NFProfile) {
+func (s *nnrfService) applyOAuthSetting(profile *models.Nrf_NFMgmt_NFProfile) error {
 	required := false
 	if profile != nil && profile.CustomInfo != nil {
 		if customInfo, ok := profile.CustomInfo.(map[string]interface{}); ok {
 			required, _ = customInfo["oauth2"].(bool)
 		}
 	}
-	s.consumer.Context().SetOAuth2Required(required)
-	logger.MainLog.Infoln("OAuth2 setting received from NRF:", required)
-	if required && s.consumer.Config().NrfCertPem() == "" {
-		logger.CfgLog.Error("OAuth2 enabled but no nrfCertPem is configured")
+	if err := s.consumer.Context().SetOAuth2Required(required); err != nil {
+		return err
 	}
+	logger.MainLog.Infoln("OAuth2 setting received from NRF:", required)
+	return nil
 }
 
 func (s *nnrfService) buildNfProfile() (*models.Nrf_NFMgmt_NFProfile, error) {
+	// TS 29.510 §5.2.2.1: SCP has an NF identity but does not provide NF services.
 	profile := &models.Nrf_NFMgmt_NFProfile{
 		NfInstanceId:  s.consumer.Context().NfInstID(),
 		NfType:        models.Nrf_NFMgmt_NFType_SCP,
 		NfStatus:      models.Nrf_NFMgmt_NFStatus_REGISTERED,
 		Ipv4Addresses: []string{s.consumer.Config().SbiRegisterIP()},
-		NfServices:    s.consumer.Config().NFServices(),
-	}
-	if len(profile.NfServices) == 0 {
-		return nil, fmt.Errorf("NFServices is empty")
 	}
 	return profile, nil
 }
 
 func (s *nnrfService) DeregisterNFInstance(parent context.Context) error {
-	ctx, _, err := s.consumer.Context().GetTokenCtx(parent,
-		models.Nrf_NFMgmt_ServiceName_NNRF_NFM, models.Nrf_NFMgmt_NFType_NRF)
+	ctx, _, err := s.consumer.Context().GetTokenCtxForNRF(parent,
+		models.Nrf_NFMgmt_ServiceName_NNRF_NFM)
 	if err != nil {
 		return err
 	}
@@ -220,8 +219,8 @@ func (s *nnrfService) DeregisterNFInstance(parent context.Context) error {
 func (s *nnrfService) SendUpdateNFInstance(ctx context.Context, patchItems []models.PatchItem) (
 	nf models.Nrf_NFMgmt_NFProfile, problemDetails *models.ProblemDetails, err error,
 ) {
-	tokenCtx, pd, err := s.consumer.Context().GetTokenCtx(ctx,
-		models.Nrf_NFMgmt_ServiceName_NNRF_NFM, models.Nrf_NFMgmt_NFType_NRF)
+	tokenCtx, pd, err := s.consumer.Context().GetTokenCtxForNRF(ctx,
+		models.Nrf_NFMgmt_ServiceName_NNRF_NFM)
 	if err != nil {
 		return nf, pd, err
 	}
@@ -264,8 +263,8 @@ func (s *nnrfService) SearchNFInstances(
 	request.TargetNfType = &targetType
 	requesterType := models.Nrf_NFMgmt_NFType_SCP
 	request.RequesterNfType = &requesterType
-	ctx, _, err := s.consumer.Context().GetTokenCtx(parent,
-		models.Nrf_NFMgmt_ServiceName_NNRF_DISC, models.Nrf_NFMgmt_NFType_NRF)
+	ctx, _, err := s.consumer.Context().GetTokenCtxForNRF(parent,
+		models.Nrf_NFMgmt_ServiceName_NNRF_DISC)
 	if err != nil {
 		return nil, "", err
 	}

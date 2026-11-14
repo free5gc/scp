@@ -2,6 +2,7 @@ package consumer
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"testing"
@@ -9,9 +10,49 @@ import (
 	"time"
 
 	"github.com/free5gc/openapi"
+	"github.com/free5gc/openapi/models"
+	"github.com/free5gc/scp/pkg/factory"
 	"github.com/free5gc/util/nfheartbeat"
 	"github.com/h2non/gock"
 )
+
+func TestBuildNfProfileDoesNotAdvertiseProxiedServices(t *testing.T) {
+	c := newNrfTestConsumer(t)
+	c.Config().Configuration.ServiceList = []factory.Service{
+		{ServiceName: factory.ServiceNausfAuth},
+		{ServiceName: factory.ServiceNudmUeau},
+		{ServiceName: factory.ServiceNudmSubManage},
+		{ServiceName: factory.ServiceNudrDR},
+	}
+	for _, name := range []string{"configured proxy services", "no proxy services"} {
+		t.Run(name, func(t *testing.T) {
+			if name == "no proxy services" {
+				c.Config().Configuration.ServiceList = nil
+			}
+			profile, err := c.buildNfProfile()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if profile.NfType != models.Nrf_NFMgmt_NFType_SCP ||
+				profile.NfInstanceId != c.Context().NfInstID() {
+				t.Fatal("profile must retain the SCP identity")
+			}
+			body, err := json.Marshal(profile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(body, &fields); err != nil {
+				t.Fatal(err)
+			}
+			for _, field := range []string{"nfServices", "nfServiceList", "allowedNfTypes"} {
+				if _, exists := fields[field]; exists {
+					t.Errorf("SCP registration must omit %s", field)
+				}
+			}
+		})
+	}
+}
 
 func TestSendUpdateNFInstance(t *testing.T) {
 	tests := []struct {
@@ -121,6 +162,22 @@ func TestRegisterNFInstanceKeepsHeartbeatTimer(t *testing.T) {
 				t.Errorf("heartbeatTimer = %d, want %d", c.heartbeatTimer, tt.wantTimer)
 			}
 		})
+	}
+}
+
+func TestRegisterNFInstanceRejectsInvalidOAuthSetup(t *testing.T) {
+	c := newNrfTestConsumer(t)
+	body := nfProfileJSON(15)
+	body["customInfo"] = map[string]any{"oauth2": true}
+	gock.New(testNrfUri).Put(testNfIdPath).Reply(http.StatusCreated).JSON(body)
+	if err := c.RegisterNFInstance(t.Context()); err == nil {
+		t.Fatal("OAuth-enabled registration without an NRF certificate must fail")
+	}
+	if c.Context().OAuth2Required() {
+		t.Fatal("invalid OAuth setup must not enable OAuth")
+	}
+	if !gock.IsDone() {
+		t.Fatal("registration request was not sent")
 	}
 }
 
