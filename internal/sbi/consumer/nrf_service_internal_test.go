@@ -2,6 +2,7 @@ package consumer
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"testing"
@@ -10,13 +11,12 @@ import (
 
 	"github.com/free5gc/openapi"
 	"github.com/free5gc/openapi/models"
-	scp_context "github.com/free5gc/scp/internal/context"
 	"github.com/free5gc/scp/pkg/factory"
 	"github.com/free5gc/util/nfheartbeat"
 	"github.com/h2non/gock"
 )
 
-func TestBuildNfProfileAllowedNfTypes(t *testing.T) {
+func TestBuildNfProfileDoesNotAdvertiseProxiedServices(t *testing.T) {
 	c := newNrfTestConsumer(t)
 	c.Config().Configuration.ServiceList = []factory.Service{
 		{ServiceName: factory.ServiceNausfAuth},
@@ -24,23 +24,33 @@ func TestBuildNfProfileAllowedNfTypes(t *testing.T) {
 		{ServiceName: factory.ServiceNudmSubManage},
 		{ServiceName: factory.ServiceNudrDR},
 	}
-	profile, err := c.buildNfProfile()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(profile.NfServices) != 4 {
-		t.Fatalf("service count = %d, want 4", len(profile.NfServices))
-	}
-	for _, service := range profile.NfServices {
-		if len(service.AllowedNfTypes) == 0 {
-			t.Fatalf("service %s has no authorization policy", service.ServiceName)
-		}
-		original := service.AllowedNfTypes[0]
-		service.AllowedNfTypes[0] = models.Nrf_NFMgmt_NFType_SCP
-		allowed, _ := scp_context.AllowedNfTypesForService(service.ServiceName)
-		if allowed[0] != original {
-			t.Fatal("profile mutation changed the shared service policy")
-		}
+	for _, name := range []string{"configured proxy services", "no proxy services"} {
+		t.Run(name, func(t *testing.T) {
+			if name == "no proxy services" {
+				c.Config().Configuration.ServiceList = nil
+			}
+			profile, err := c.buildNfProfile()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if profile.NfType != models.Nrf_NFMgmt_NFType_SCP ||
+				profile.NfInstanceId != c.Context().NfInstID() {
+				t.Fatal("profile must retain the SCP identity")
+			}
+			body, err := json.Marshal(profile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(body, &fields); err != nil {
+				t.Fatal(err)
+			}
+			for _, field := range []string{"nfServices", "nfServiceList", "allowedNfTypes"} {
+				if _, exists := fields[field]; exists {
+					t.Errorf("SCP registration must omit %s", field)
+				}
+			}
+		})
 	}
 }
 

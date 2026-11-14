@@ -13,7 +13,6 @@ import (
 	"github.com/free5gc/openapi/models"
 	nrfNFDisc "github.com/free5gc/openapi/nrf/NFDisc"
 	nrfNFMgmt "github.com/free5gc/openapi/nrf/NFMgmt"
-	scp_context "github.com/free5gc/scp/internal/context"
 	"github.com/free5gc/scp/internal/logger"
 	"github.com/free5gc/util/nfheartbeat"
 )
@@ -192,24 +191,12 @@ func (s *nnrfService) applyOAuthSetting(profile *models.Nrf_NFMgmt_NFProfile) er
 }
 
 func (s *nnrfService) buildNfProfile() (*models.Nrf_NFMgmt_NFProfile, error) {
+	// TS 29.510 §5.2.2.1: SCP has an NF identity but does not provide NF services.
 	profile := &models.Nrf_NFMgmt_NFProfile{
 		NfInstanceId:  s.consumer.Context().NfInstID(),
 		NfType:        models.Nrf_NFMgmt_NFType_SCP,
 		NfStatus:      models.Nrf_NFMgmt_NFStatus_REGISTERED,
 		Ipv4Addresses: []string{s.consumer.Config().SbiRegisterIP()},
-		NfServices:    s.consumer.Config().NFServices(),
-	}
-	if len(profile.NfServices) == 0 {
-		return nil, fmt.Errorf("NFServices is empty")
-	}
-	// TS 29.510 §6.1.6.2.3: allowedNfTypes identifies consumers allowed to access an NF service.
-	for i := range profile.NfServices {
-		service := &profile.NfServices[i]
-		allowed, known := scp_context.AllowedNfTypesForService(service.ServiceName)
-		if !known || len(allowed) == 0 {
-			return nil, fmt.Errorf("no AllowedNfTypes policy for service %s", service.ServiceName)
-		}
-		service.AllowedNfTypes = allowed
 	}
 	return profile, nil
 }
