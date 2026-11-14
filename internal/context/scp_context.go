@@ -232,8 +232,6 @@ type DelegatedTokenRequest struct {
 	ClientCredentialsAssertion string
 }
 
-// GetDelegatedTokenCtx intentionally does not use the shared token cache: CCA and caller authentication
-// must be presented to NRF on each delegated acquisition, without crossing consumer identities.
 func (c *ScpContext) GetDelegatedTokenCtx(parent context.Context, request DelegatedTokenRequest) (
 	context.Context, *models.ProblemDetails, error,
 ) {

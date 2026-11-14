@@ -5,7 +5,7 @@ go 1.26.2
 require (
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
 	github.com/davecgh/go-spew v1.1.1
-	github.com/free5gc/openapi v1.3.1-0.20261104070955-7fad8e868cb2
+	github.com/free5gc/openapi v1.3.1-0.20261114083954-6dc929a25d22
 	github.com/free5gc/util v1.4.1-0.20261014070359-d865b0ce854b
 	github.com/gin-contrib/cors v1.7.6
 	github.com/gin-gonic/gin v1.10.1
@@ -77,5 +77,3 @@ require (
 	google.golang.org/protobuf v1.36.10 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/free5gc/openapi => github.com/ki225/openapi v0.0.0-20261114072521-e46aeb169b05
