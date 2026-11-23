@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"strconv"
 	"sync"
 	"time"
 
@@ -15,6 +14,7 @@ import (
 	nrfNFMgmt "github.com/free5gc/openapi/nrf/NFMgmt"
 	"github.com/free5gc/scp/internal/logger"
 	"github.com/free5gc/util/nfheartbeat"
+	"github.com/free5gc/util/serviceuri"
 )
 
 const RetryRegisterNrfDuration = 2 * time.Second
@@ -192,11 +192,14 @@ func (s *nnrfService) applyOAuthSetting(profile *models.Nrf_NFMgmt_NFProfile) er
 
 func (s *nnrfService) buildNfProfile() (*models.Nrf_NFMgmt_NFProfile, error) {
 	// TS 29.510 §5.2.2.1: SCP has an NF identity but does not provide NF services.
+	addr := serviceuri.NewAddressing(s.consumer.Config().SbiRegisterIP())
 	profile := &models.Nrf_NFMgmt_NFProfile{
 		NfInstanceId:  s.consumer.Context().NfInstID(),
 		NfType:        models.Nrf_NFMgmt_NFType_SCP,
 		NfStatus:      models.Nrf_NFMgmt_NFStatus_REGISTERED,
-		Ipv4Addresses: []string{s.consumer.Config().SbiRegisterIP()},
+		Fqdn:          addr.FQDN,
+		Ipv4Addresses: addr.IPv4Addresses,
+		Ipv6Addresses: addr.IPv6Addresses,
 	}
 	return profile, nil
 }
@@ -275,64 +278,7 @@ func (s *nnrfService) SearchNFInstances(
 	if rsp == nil || rsp.Nrf_NFDisc_SearchResult == nil {
 		return nil, "", nilResponse("NRF discovery")
 	}
-	return getProfileAndURI(rsp.Nrf_NFDisc_SearchResult.NfInstances, serviceName)
-}
-
-func getProfileAndURI(
-	instances []models.Nrf_NFDisc_NFProfile,
-	serviceName models.Nrf_NFMgmt_ServiceName,
-) (*models.Nrf_NFDisc_NFProfile, string, error) {
-	for i := range instances {
-		if uri := searchNFServiceURI(instances[i], serviceName, models.Nrf_NFMgmt_NFServiceStatus_REGISTERED); uri != "" {
-			return &instances[i], uri, nil
-		}
-	}
-	return nil, "", fmt.Errorf("no URI for %s found", serviceName)
-}
-
-func searchNFServiceURI(
-	profile models.Nrf_NFDisc_NFProfile,
-	serviceName models.Nrf_NFMgmt_ServiceName,
-	status models.Nrf_NFMgmt_NFServiceStatus,
-) string {
-	for _, service := range profile.NfServices {
-		if service.ServiceName != serviceName || service.NfServiceStatus != status {
-			continue
-		}
-		if service.Fqdn != "" {
-			return string(service.Scheme) + "://" + service.Fqdn
-		}
-		if profile.Fqdn != "" {
-			return string(service.Scheme) + "://" + profile.Fqdn
-		}
-		if service.ApiPrefix != "" {
-			if parsed, err := url.Parse(service.ApiPrefix); err == nil {
-				return parsed.Scheme + "://" + parsed.Host
-			}
-		}
-		if len(service.IpEndPoints) > 0 {
-			point := service.IpEndPoints[0]
-			address := point.Ipv4Address
-			if address == "" && len(profile.Ipv4Addresses) > 0 {
-				address = profile.Ipv4Addresses[0]
-			}
-			if address != "" {
-				return uriFromIPEndpoint(service.Scheme, address, point.Port)
-			}
-		}
-	}
-	return ""
-}
-
-func uriFromIPEndpoint(scheme models.UriScheme, address string, port int32) string {
-	if port != 0 {
-		return string(scheme) + "://" + address + ":" + strconv.Itoa(int(port))
-	}
-	if scheme == models.UriScheme_HTTP {
-		return string(scheme) + "://" + address + ":80"
-	}
-	if scheme == models.UriScheme_HTTPS {
-		return string(scheme) + "://" + address + ":443"
-	}
-	return ""
+	// NFs that still register a full URL as apiPrefix remain reachable.
+	return serviceuri.ResolveFromSearchResult(rsp.Nrf_NFDisc_SearchResult.NfInstances, serviceName,
+		serviceuri.Options{AllowLegacyAbsoluteAPIPrefix: true})
 }

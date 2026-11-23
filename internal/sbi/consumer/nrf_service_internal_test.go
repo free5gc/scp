@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"reflect"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -49,6 +50,34 @@ func TestBuildNfProfileDoesNotAdvertiseProxiedServices(t *testing.T) {
 				if _, exists := fields[field]; exists {
 					t.Errorf("SCP registration must omit %s", field)
 				}
+			}
+		})
+	}
+}
+
+// TS 29.510 6.1.6.2.2: a hostname is registered as fqdn, an IP literal as ipv4Addresses / ipv6Addresses.
+func TestBuildNfProfileAddressing(t *testing.T) {
+	tests := []struct {
+		registerAddr string
+		fqdn         string
+		ipv4, ipv6   []string
+	}{
+		{registerAddr: "scp.free5gc.org", fqdn: "scp.free5gc.org"},
+		{registerAddr: "127.0.0.113", ipv4: []string{"127.0.0.113"}},
+		{registerAddr: "2001:db8::113", ipv6: []string{"2001:db8::113"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.registerAddr, func(t *testing.T) {
+			c := newNrfTestConsumer(t)
+			c.Config().Configuration.Sbi.RegisterIPv4 = tt.registerAddr
+			profile, err := c.buildNfProfile()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if profile.Fqdn != tt.fqdn || !reflect.DeepEqual(profile.Ipv4Addresses, tt.ipv4) ||
+				!reflect.DeepEqual(profile.Ipv6Addresses, tt.ipv6) {
+				t.Fatalf("got fqdn %q, ipv4Addresses %v, ipv6Addresses %v",
+					profile.Fqdn, profile.Ipv4Addresses, profile.Ipv6Addresses)
 			}
 		})
 	}
