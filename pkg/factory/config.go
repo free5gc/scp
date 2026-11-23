@@ -13,6 +13,7 @@ import (
 	"github.com/free5gc/openapi/models"
 	"github.com/free5gc/scp/internal/logger"
 	"github.com/free5gc/util/nfheartbeat"
+	"github.com/free5gc/util/serviceuri"
 	"github.com/google/uuid"
 )
 
@@ -408,6 +409,7 @@ func (c *Config) TLSKeyPath() string {
 
 func (c *Config) NFServices() []models.Nrf_NFMgmt_NFService {
 	nfServices := []models.Nrf_NFMgmt_NFService{}
+	addr := serviceuri.NewAddressing(c.SbiRegisterIP())
 	for i, s := range c.ServiceList() {
 		apiVersion, ok := serviceAPIVersions[s.ServiceName]
 		if !ok {
@@ -422,16 +424,10 @@ func (c *Config) NFServices() []models.Nrf_NFMgmt_NFService {
 					ApiVersionInUri: apiVersion.uri,
 				},
 			},
-			Scheme:          models.UriScheme(c.SbiScheme()),
-			NfServiceStatus: models.Nrf_NFMgmt_NFServiceStatus_REGISTERED,
-			ApiPrefix:       c.SbiUri(),
-			IpEndPoints: []models.Nrf_NFMgmt_IpEndPoint{
-				{
-					Ipv4Address: c.SbiRegisterIP(),
-					Transport:   models.Nrf_NFMgmt_TransportProtocol_TCP,
-					Port:        int32(c.SbiPort()),
-				},
-			},
+			Scheme:            models.UriScheme(c.SbiScheme()),
+			NfServiceStatus:   models.Nrf_NFMgmt_NFServiceStatus_REGISTERED,
+			Fqdn:              addr.FQDN,
+			IpEndPoints:       addr.IpEndPoints(int32(c.SbiPort())),
 			SupportedFeatures: s.SuppFeat,
 		}
 		nfServices = append(nfServices, nfService)
