@@ -278,7 +278,6 @@ func (s *nnrfService) SearchNFInstances(
 	if rsp == nil || rsp.Nrf_NFDisc_SearchResult == nil {
 		return nil, "", nilResponse("NRF discovery")
 	}
-	// NFs that still register a full URL as apiPrefix remain reachable.
 	return serviceuri.ResolveFromSearchResult(rsp.Nrf_NFDisc_SearchResult.NfInstances, serviceName,
-		serviceuri.Options{AllowLegacyAbsoluteAPIPrefix: true})
+		serviceuri.Options{})
 }
