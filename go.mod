@@ -5,7 +5,7 @@ go 1.26.2
 require (
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
 	github.com/davecgh/go-spew v1.1.1
-	github.com/free5gc/openapi v1.3.1-0.20261114083954-6dc929a25d22
+	github.com/free5gc/openapi v1.3.1-0.20261123104051-bc062c4e038c
 	github.com/free5gc/util v1.4.1-0.20261118044530-a14766fe79d2
 	github.com/gin-contrib/cors v1.7.6
 	github.com/gin-gonic/gin v1.10.1
